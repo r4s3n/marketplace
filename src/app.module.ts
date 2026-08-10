@@ -1,9 +1,11 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ProxyModule } from './proxy/proxy.module';
+import { MiddlewareModule } from './middleware/middleware.module';
+import { LoggingMiddleware } from './middleware/logging/logging.middleware';
 
 @Module({
   imports: [
@@ -19,8 +21,15 @@ import { ProxyModule } from './proxy/proxy.module';
       },
     ]),
     ProxyModule,
+    MiddlewareModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+// importamos o NestModule, nele temos uma função chamada configure, essa função existe para que configuramos nosso middleware para toda a aplicação
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // aplicamos nosso middleware para toda as rotas
+    consumer.apply(LoggingMiddleware).forRoutes('*');
+  }
+}
