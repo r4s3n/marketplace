@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { serviceConfig } from '../../config/gateway.config';
 import { firstValueFrom } from 'rxjs';
 
+// interface que representa as informações do usuário que vão ser passadas para o serviço, caso o usuário esteja logado
 interface UserInfo {
   userId?: string;
   email?: string;
