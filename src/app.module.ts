@@ -16,8 +16,19 @@ import { LoggingMiddleware } from './middleware/logging/logging.middleware';
     // configurando o módulo de limitação de requisições
     ThrottlerModule.forRoot([
       {
+        name: 'short',
+        ttl: 1000, // 1 segundo
+        limit: 10, // 10 requests por minuto
+      },
+      {
+        name: 'medium',
         ttl: 60000, // 1 minuto
-        limit: 100, // 100 request por minuto
+        limit: 100, // 100 requests por minuto
+      },
+      {
+        name: 'long',
+        ttl: 900000, // 15 minuto
+        limit: 1000, // 1000 requests por minuto
       },
     ]),
     ProxyModule,

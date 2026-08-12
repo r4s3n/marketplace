@@ -9,13 +9,57 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.use(helmet()); // adicionando o helmet para aumentar a segurança da aplicação
+  // adicionando o helmet para aumentar a segurança da aplicação
+  // configuramos um capeçalho CSP -> Previni ataques cross-site scripting
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"], // padrão de escrita, fonte, script. etc. Self permite apenas recursos desta origin
+          scriptSrc: ["'self'"], // fonte de script javaScript, só podemos permitir da mesma origin. DANGER.
+          styleSrc: ["'self'", "'unsafe-inline'"], // fonte de estilos css, permitimos recursos desta mesma origin e tbm inline
+          imgSrc: ["'self'", "'data:'", "'https:'"], // imagens, permitido da mesma origem, banco de dados e vindas do https
+        },
+      },
+      crossOriginEmbedderPolicy: false, // isola alguns recursos origin mas como todas as requsisições tem que enviar um cabeçalho COEP e isso pode quebrar nossa aplicação
+      // configura um cabeçaro http -> força que todos os navegadores use https para se conectar com a gente
+      hsts: {
+        maxAge: 31536000, // tempo maximo da requisição
+        includeSubDomains: true, // aplica para todos os dominios
+        preload: true, // permite que o dominio seja adicionado na lista de pre-carregamento no navegador
+      },
+    }),
+  );
 
   // configurando o CORS para permitir requisições de qualquer origem
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*', // permitindo requisições de qualquer origem
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE', // permitindo os métodos HTTP mais comuns
-    allowedHeaders: ['Content-Type', 'Authorization'], // permitindo os headers mais comuns
+    origin: (
+      origin: string | undefined, // tipamos como string ou undefined
+      //tipamos como uma função que recebe erro ou null, um boleando e que não retorna nada
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin) return callback(null, true);
+      const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ['*'];
+      // se o endereço da origin passado for * ou está dentro de allowedOrigins
+      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        callback(null, true); // pode passar
+      } else {
+        // se não, retornamos um erro, não precisamos colocar false porq o cors já identifica como false se tiver um erro
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ['GET,HEAD,PUT,PATCH,POST,DELETE'], // permitindo os métodos HTTP mais comuns
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-with',
+      'Accept',
+      'Origin',
+      'Access-Control-Request-Method',
+      'Access-Control-Request-Headers',
+    ],
+    credentials: true,
+    maxAge: 86400, // 24 hours
   });
 
   // configurando o pipe de validação global para validar os dados recebidos em todas as rotas
