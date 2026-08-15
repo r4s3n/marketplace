@@ -7,13 +7,6 @@ import { AuthService } from '../service/auth.service';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('register')
-  @ApiOperation({ summary: 'User registration' }) // documentação swagger
-  @ApiResponse({ status: 201, description: 'Registration successful' }) // documentação response swagger para test
-  @ApiResponse({ status: 401, description: 'Invalid registration data' }) // documentação response error swagger para test
-  async register(@Body() registerDto: any) {
-    return this.authService.register(registerDto);
-  }
   @Post('login')
   @HttpCode(HttpStatus.OK) // Se a requisição tiver sucesso, retorna um status OK
   @ApiOperation({ summary: 'User login' }) // documentação swagger
@@ -21,5 +14,12 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' }) // documentação response error swagger para test
   async login(@Body() loginDto: { email: string; password: string }) {
     return this.authService.login(loginDto);
+  }
+  @Post('register')
+  @ApiOperation({ summary: 'User registration' }) // documentação swagger
+  @ApiResponse({ status: 201, description: 'Registration successful' }) // documentação response swagger para test
+  @ApiResponse({ status: 400, description: 'Invalid registration data' }) // documentação response error swagger para test
+  async register(@Body() registerDto: any) {
+    return this.authService.register(registerDto);
   }
 }
