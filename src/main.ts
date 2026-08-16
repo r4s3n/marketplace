@@ -74,9 +74,56 @@ async function bootstrap() {
   // configurando o Swagger para gerar a documentação da API
   const config = new DocumentBuilder()
     .setTitle('Marketplace API Gateway')
-    .setDescription('API Gateway para o projeto de microserviços')
+    .setDescription(
+      `
+      API Gateway para o sistema de Marketplace com microserviços
+
+      Serviços Disponíveis:
+      - Users Service: Autenticação e gestão de usuários
+      - Products Service: Catálogo e gestão de produtos
+      - Checkout Service: Carrinho e processamento de pedidos
+      - Payments Service: Processamento de pagamentos
+
+      Autenticação:
+      - Use JWT Bearer token para rotas protegidas
+      - Use Session token para validação de sessão
+    `,
+    )
     .setVersion('1.0')
-    .addBearerAuth() // adicionando autenticação via Bearer Token
+    .setContact(
+      'MarketPlace Team',
+      'https://marketplace.com',
+      'dev@marketplace.com',
+    )
+    .setLicense('MIT', 'https://opensource.org/licenses/MIT')
+    .addBearerAuth(
+      // Authorize
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        name: 'JWT',
+        description: 'Enter JWT token',
+        in: 'header',
+      },
+      'JWT-auth',
+    ) // adicionando autenticação via Bearer Token
+    .addApiKey(
+      // quais as chaves que nosso projeto precisa -> fica em authorize
+      {
+        type: 'apiKey',
+        name: 'x-session-token',
+        in: 'header',
+        description: 'Session token for user validation',
+      },
+      'session-auth',
+    )
+    .addTag('Authentication', 'Endpoints para autenticação e autorização')
+    .addTag('Users', 'Endpoints para gestão de usuários')
+    .addTag('Products', 'Endpoints para catálogo de produtos')
+    .addTag('Checkout', 'Endpoints para carrinho e pedidos')
+    .addTag('Payments', 'Endpoints para processamento de pagamentos')
+    .addTag('Health', 'Endpoints para monitoramento de saúde')
     .build();
 
   // criando o documento do Swagger com base na configuração acima
