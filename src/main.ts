@@ -86,8 +86,8 @@ async function bootstrap() {
   const port = process.env.PORT || 3005; // definindo a porta da aplicação
   await app.listen(port);
 
-  console.log(`Application is running on: http://localhost:${port}`); // exibindo a URL da aplicação no console
-  console.log(`Swagger is running on: http://localhost:${port}/api`); // exibindo a URL da documentação do Swagger no console
+  console.log(`🚀 Application is running on: http://localhost:${port}`); // exibindo a URL da aplicação no console
+  console.log(`📖 Swagger is running on: http://localhost:${port}/api`); // exibindo a URL da documentação do Swagger no console
 }
 
 bootstrap();
