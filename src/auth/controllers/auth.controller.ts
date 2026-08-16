@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AuthService } from '../service/auth.service';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('Authentication') // documentação swagger
 @Controller('auth')
@@ -12,6 +13,7 @@ export class AuthController {
   @ApiOperation({ summary: 'User login' }) // documentação swagger
   @ApiResponse({ status: 200, description: 'Login successful' }) // documentação response swagger para test
   @ApiResponse({ status: 401, description: 'Invalid credentials' }) // documentação response error swagger para test
+  @Throttle({ short: { limit: 5, ttl: 60000 } })
   async login(@Body() loginDto: { email: string; password: string }) {
     return this.authService.login(loginDto);
   }
@@ -19,6 +21,7 @@ export class AuthController {
   @ApiOperation({ summary: 'User registration' }) // documentação swagger
   @ApiResponse({ status: 201, description: 'Registration successful' }) // documentação response swagger para test
   @ApiResponse({ status: 400, description: 'Invalid registration data' }) // documentação response error swagger para test
+  @Throttle({ medium: { limit: 3, ttl: 60000 } })
   async register(@Body() registerDto: any) {
     return this.authService.register(registerDto);
   }
