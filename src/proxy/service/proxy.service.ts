@@ -10,6 +10,8 @@ interface UserInfo {
   role?: string;
 }
 
+type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
+
 @Injectable()
 export class ProxyService {
   private readonly logger = new Logger(ProxyService.name);
@@ -19,7 +21,7 @@ export class ProxyService {
   // metodo que vai receber a requisição e repassar para o serviço correto
   async proxyRequest(
     serviceName: keyof typeof serviceConfig,
-    method: string,
+    method: HttpMethod,
     path: string,
     data?: unknown, // uso o uknown pq não sei o tipo de dado que vai ser enviado, pode ser qualquer coisa
     headers?: Record<string, string>, // o record é um tipo de dado que representa um objeto com chaves e valores, nesse caso, as chaves são strings e os valores também são strings

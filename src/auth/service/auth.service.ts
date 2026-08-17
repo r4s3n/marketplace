@@ -3,6 +3,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { firstValueFrom } from 'rxjs';
 import { serviceConfig } from '../../config/gateway.config';
+import { RegisterDto } from '../dtos/register.dto';
+import { LoginDto } from '../dtos/login.dto';
 
 export interface UserSession {
   valid: boolean;
@@ -16,6 +18,17 @@ export interface UserSession {
   } | null;
 }
 
+export interface AuthResponse {
+  access_token: string;
+  user: {
+    id: string;
+    email: string;
+    firsName: string;
+    lastName: string;
+    role: string;
+  } | null;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -24,7 +37,7 @@ export class AuthService {
   ) {}
 
   // valida o token que é enviado
-  validateJwtToken(token: string): Promise<any> {
+  validateJwtToken(token: string): Promise<AuthResponse> {
     try {
       return this.jwtService.verify(token);
     } catch (error) {
@@ -48,9 +61,9 @@ export class AuthService {
   }
 
   // faz o login
-  async login(loginDto: { email: string; password: string }) {
+  async login(loginDto: LoginDto): Promise<AuthResponse> {
     try {
-      const data = await firstValueFrom(
+      const { data } = await firstValueFrom(
         this.httpService.post(`${serviceConfig.users.url}/login`, loginDto, {
           timeout: serviceConfig.users.timeout,
         }),
@@ -62,9 +75,9 @@ export class AuthService {
   }
 
   // faz o registro na aplicação
-  async register(registerDto: any) {
+  async register(registerDto: RegisterDto): Promise<AuthResponse> {
     try {
-      const data = await firstValueFrom(
+      const { data } = await firstValueFrom(
         this.httpService.post(
           `${serviceConfig.users.url}/auth/register`,
           registerDto,

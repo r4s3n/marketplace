@@ -3,6 +3,15 @@ import { PassportStrategy } from '@nestjs/passport';
 import { AuthService } from '../service/auth.service';
 import { Strategy, ExtractJwt } from 'passport-jwt';
 
+interface payload {
+  sub: string;
+  email: string;
+  role: string;
+  token: string;
+  iat?: number;
+  exp?: number;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly authService: AuthService) {
@@ -21,7 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   // vamos validar esse payload
-  async validate(payload: any) {
+  async validate(payload: payload) {
     if (!payload) {
       throw new UnauthorizedException();
     }
