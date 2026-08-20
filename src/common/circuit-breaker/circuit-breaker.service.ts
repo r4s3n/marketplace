@@ -17,12 +17,12 @@ export class CircuitBreakerService {
 
   async executeWithCircuitBreaker<T>(
     operation: () => Promise<T>, // operação a ser executada
+    key: string,
     fallback?: () => Promise<T>, // operação de erro
-    key?: string,
     options: CircuitBreakerOptions = this.defaultOptions,
   ): Promise<T> {
     const config = { ...this.defaultOptions, ...options };
-    const circuit = this.getOrCreateCircuit(key!, config);
+    const circuit = this.getOrCreateCircuit(key, config);
 
     // Verifico se o circuit breaker está aberto, se não, mudo o estado para semi aberto
     if (circuit.state === CircuitBreakerStateEnum.OPEN) {
@@ -43,10 +43,10 @@ export class CircuitBreakerService {
     // faço um tryCatch para ver se a minha operação teve sucesso ou geral algum erro
     try {
       const result = await operation(); // faço a aoperação
-      this.onSuccess(circuit, key!); // se ela tiver sucesso, chamo minha função onSuccess
+      this.onSuccess(circuit, key); // se ela tiver sucesso, chamo minha função onSuccess
       return result; // e retorno ela
     } catch (error: any) {
-      this.onFailure(circuit, key!, config); // caso a operação dar errado, chamo a minha função failure
+      this.onFailure(circuit, key, config); // caso a operação dar errado, chamo a minha função failure
       this.logger.error(`Circuit breaker failure ${key}:`, error.message);
       // e se tiver alguma operação de erro, retorno ela, se não, retorno o erro
       if (fallback) {

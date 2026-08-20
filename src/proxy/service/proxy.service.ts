@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { serviceConfig } from '../../config/gateway.config';
 import { firstValueFrom } from 'rxjs';
+import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 
 // interface que representa as informações do usuário que vão ser passadas para o serviço, caso o usuário esteja logado
 interface UserInfo {
@@ -16,15 +17,18 @@ type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 export class ProxyService {
   private readonly logger = new Logger(ProxyService.name);
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    private readonly httpService: HttpService,
+    private readonly circuitBreakerService: CircuitBreakerService, // instancio o circuitBreaker dentro do meu proxy
+  ) {}
 
   // metodo que vai receber a requisição e repassar para o serviço correto
   async proxyRequest(
     serviceName: keyof typeof serviceConfig,
     method: HttpMethod,
     path: string,
-    data?: unknown, // uso o uknown pq não sei o tipo de dado que vai ser enviado, pode ser qualquer coisa
-    headers?: Record<string, string>, // o record é um tipo de dado que representa um objeto com chaves e valores, nesse caso, as chaves são strings e os valores também são strings
+    data?: unknown,
+    headers?: Record<string, string>,
     userInfo?: UserInfo,
   ) {
     const service = serviceConfig[serviceName];
@@ -32,31 +36,37 @@ export class ProxyService {
 
     this.logger.log(`Proxying ${method} request to ${serviceName}: ${url}`);
 
-    try {
-      const enhancedHeaders = {
-        ...headers,
-        'x-user-id': userInfo?.userId,
-        'x-user-email': userInfo?.email,
-        'x-user-role': userInfo?.role,
-      };
+    return this.circuitBreakerService.executeWithCircuitBreaker(
+      async () => {
+        // nossa operação
+        const enhancedHeaders = {
+          ...headers,
+          'x-user-id': userInfo?.userId,
+          'x-user-email': userInfo?.email,
+          'x-user-role': userInfo?.role,
+        };
 
-      const response = await firstValueFrom(
-        this.httpService.request({
-          method: method.toLowerCase(),
-          url,
-          data,
-          headers: enhancedHeaders,
-          timeout: service.timeout,
-        }),
-      );
+        const response = await firstValueFrom(
+          this.httpService.request({
+            method: method.toLowerCase(),
+            url,
+            data,
+            headers: enhancedHeaders,
+            timeout: service.timeout,
+          }),
+        );
 
-      return response;
-    } catch (error) {
-      this.logger.error(
-        `Error Proxying ${method} request to ${serviceName}: ${url}`,
-      );
-      throw error;
-    }
+        return response;
+      },
+      `proxy-${serviceName}`, // key
+      () => {
+        // nosso fallback
+        throw new Error(
+          `Error Proxying ${method} request to ${serviceName}: ${url}`,
+        );
+      },
+      { failureThreshold: 3, timeout: 30000, resetTimeout: 30000 }, // config
+    );
   }
 
   // metodo que vai verificar a saúde do serviço, se está online ou não
