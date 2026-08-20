@@ -3,6 +3,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { serviceConfig } from '../../config/gateway.config';
 import { firstValueFrom } from 'rxjs';
 import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
+import { CacheFallbackService } from '../../common/fallback/cache.fallback';
+import { defaultFallbackService } from '../../common/fallback/default.fallback';
 
 // interface que representa as informações do usuário que vão ser passadas para o serviço, caso o usuário esteja logado
 interface UserInfo {
@@ -20,6 +22,8 @@ export class ProxyService {
   constructor(
     private readonly httpService: HttpService,
     private readonly circuitBreakerService: CircuitBreakerService, // instancio o circuitBreaker dentro do meu proxy
+    private readonly cacheFallbackService: CacheFallbackService,
+    private readonly defaultFallbackService: defaultFallbackService,
   ) {}
 
   // metodo que vai receber a requisição e repassar para o serviço correto
@@ -35,6 +39,8 @@ export class ProxyService {
     const url = `${service.url}${path}`;
 
     this.logger.log(`Proxying ${method} request to ${serviceName}: ${url}`);
+
+    const fallback = this.createServiceFallback(serviceName, method, path); // nosso fallback
 
     return this.circuitBreakerService.executeWithCircuitBreaker(
       async () => {
@@ -56,15 +62,19 @@ export class ProxyService {
           }),
         );
 
-        return response;
+        // se o nosso response for sucesso, eu guardo no cache
+        if (method.toLowerCase() === 'get') {
+          this.cacheFallbackService.setCacheData(
+            `${serviceName}-${path}`,
+            response.data,
+          );
+        }
+
+        // retorno apenas os dados e não o response completo
+        return response.data;
       },
       `proxy-${serviceName}`, // key
-      () => {
-        // nosso fallback
-        throw new Error(
-          `Error Proxying ${method} request to ${serviceName}: ${url}`,
-        );
-      },
+      fallback, // nosso fallback personalizado
       { failureThreshold: 3, timeout: 30000, resetTimeout: 30000 }, // config
     );
   }
@@ -86,6 +96,51 @@ export class ProxyService {
       // faço um type guard para verificar se o erro é uma instância de Error, caso seja, pego a mensagem do erro, caso não seja, retorno uma mensagem padrão
       const message = error instanceof Error ? error.message : 'Unknown error';
       return { status: 'unhealthy', error: message };
+    }
+  }
+
+  private createServiceFallback(
+    serviceName: string,
+    method: string,
+    path: string,
+  ) {
+    switch (serviceName) {
+      case 'users':
+        if (path.includes('/auth/login')) {
+          return this.defaultFallbackService.createErrorFallback(
+            'users',
+            'Authentication service unavailable',
+          );
+        }
+        return this.defaultFallbackService.createErrorFallback(
+          'users',
+          'User service unavailable',
+        );
+
+      case 'products':
+        if (method.toLowerCase() === 'get') {
+          return this.cacheFallbackService.createCacheFallback(
+            `Product-${path}`,
+            { products: [], total: 0, page: 1, limit: 10 },
+          );
+        }
+
+        return this.defaultFallbackService.createErrorFallback(
+          'products',
+          'Product service unavailable',
+        );
+
+      case 'checkout':
+      case 'payments':
+        return this.defaultFallbackService.createErrorFallback(
+          serviceName,
+          `${serviceName} service unavailable`,
+        );
+      default:
+        return this.defaultFallbackService.createErrorFallback(
+          serviceName,
+          'Service unavailable',
+        );
     }
   }
 }
