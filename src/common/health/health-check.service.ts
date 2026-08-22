@@ -6,8 +6,8 @@ import { serviceConfig } from '../../config/gateway.config';
 import { firstValueFrom, timeout } from 'rxjs';
 
 @Injectable()
-export class HealthCheckStatus {
-  private readonly logger = new Logger(HealthCheckStatus.name); // importamos o log para montar os logs do health
+export class HealthCheckService {
+  private readonly logger = new Logger(HealthCheckService.name); // importamos o log para montar os logs do health
   private readonly healthCache = new Map<string, ServiceHealth>(); // fazemos um cache com o map para esses logs
 
   //para construir esse service, usamos o http e o circuit Breaker

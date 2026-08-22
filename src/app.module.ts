@@ -9,6 +9,14 @@ import { LoggingMiddleware } from './middleware/logging/logging.middleware';
 import { AuthModule } from './auth/auth.module';
 import { APP_GUARD } from '@nestjs/core';
 import { CustomThrottlerGuard } from './guards/throttler.guard';
+import { HealthModule } from './health/health.module';
+import { healthCheckModule } from './common/health/health-check.module';
+import { FallbackModule } from './common/fallback/fallback.module';
+import { CicuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
+import { TimeoutModule } from './common/timeout/timeout.module';
+import { TimeoutService } from './common/timeout.service';
+import { RetryModule } from './common/retry/retry.module';
+import { RetryService } from './common/retry.service';
 
 @Module({
   imports: [
@@ -41,6 +49,12 @@ import { CustomThrottlerGuard } from './guards/throttler.guard';
     ProxyModule,
     MiddlewareModule,
     AuthModule,
+    HealthModule,
+    healthCheckModule,
+    FallbackModule,
+    CicuitBreakerModule,
+    TimeoutModule,
+    RetryModule,
   ],
   controllers: [AppController],
   providers: [
@@ -49,6 +63,8 @@ import { CustomThrottlerGuard } from './guards/throttler.guard';
       provide: APP_GUARD,
       useClass: CustomThrottlerGuard,
     },
+    TimeoutService,
+    RetryService,
   ],
 })
 // importamos o NestModule, nele temos uma função chamada configure, essa função existe para que configuramos nosso middleware para toda a aplicação
