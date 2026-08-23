@@ -5,6 +5,8 @@ import { firstValueFrom } from 'rxjs';
 import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
 import { CacheFallbackService } from '../../common/fallback/cache.fallback';
 import { defaultFallbackService } from '../../common/fallback/default.fallback';
+import { RetryService } from '../../common/retry/retry.service';
+import { TimeoutService } from '../../common/timeout/timeout.service';
 
 // interface que representa as informações do usuário que vão ser passadas para o serviço, caso o usuário esteja logado
 interface UserInfo {
@@ -24,6 +26,8 @@ export class ProxyService {
     private readonly circuitBreakerService: CircuitBreakerService, // instancio o circuitBreaker dentro do meu proxy
     private readonly cacheFallbackService: CacheFallbackService,
     private readonly defaultFallbackService: defaultFallbackService,
+    private readonly retryService: RetryService,
+    private readonly timeoutService: TimeoutService,
   ) {}
 
   // metodo que vai receber a requisição e repassar para o serviço correto
@@ -42,61 +46,55 @@ export class ProxyService {
 
     const fallback = this.createServiceFallback(serviceName, method, path); // nosso fallback
 
+    // PRIMEIRA CAMADA => CIRCUIT BREAKER
     return this.circuitBreakerService.executeWithCircuitBreaker(
       async () => {
-        // nossa operação
-        const enhancedHeaders = {
-          ...headers,
-          'x-user-id': userInfo?.userId,
-          'x-user-email': userInfo?.email,
-          'x-user-role': userInfo?.role,
-        };
+        // SEGUNDA CAMADA => RETRY
+        return await this.retryService.executeWithExponentialBackoff(
+          async () => {
+            // TERCEIRA CAMADA => TIMEOUT
+            return await this.timeoutService.executeWithCustomTimeout(
+              // Operation
+              async () => {
+                const enhancedHeaders = {
+                  ...headers,
+                  'x-user-id': userInfo?.userId,
+                  'x-user-email': userInfo?.email,
+                  'x-user-role': userInfo?.role,
+                };
 
-        const response = await firstValueFrom(
-          this.httpService.request({
-            method: method.toLowerCase(),
-            url,
-            data,
-            headers: enhancedHeaders,
-            timeout: service.timeout,
-          }),
+                const response = await firstValueFrom(
+                  this.httpService.request({
+                    method: method.toLowerCase(),
+                    url,
+                    data,
+                    headers: enhancedHeaders,
+                    timeout: service.timeout,
+                  }),
+                );
+
+                // se o nosso response for sucesso, eu guardo no cache
+                if (method.toLowerCase() === 'get') {
+                  this.cacheFallbackService.setCacheData(
+                    `${serviceName}-${path}`,
+                    response.data,
+                  );
+                }
+
+                // retorno apenas os dados e não o response completo
+                return response.data;
+              },
+              service.timeout, // tempo de Timeout
+            );
+          },
+          4, // MAX retries
         );
-
-        // se o nosso response for sucesso, eu guardo no cache
-        if (method.toLowerCase() === 'get') {
-          this.cacheFallbackService.setCacheData(
-            `${serviceName}-${path}`,
-            response.data,
-          );
-        }
-
-        // retorno apenas os dados e não o response completo
-        return response.data;
       },
+
       `proxy-${serviceName}`, // key
       fallback, // nosso fallback personalizado
       { failureThreshold: 3, timeout: 30000, resetTimeout: 30000 }, // config
     );
-  }
-
-  // metodo que vai verificar a saúde do serviço, se está online ou não
-  async getServiceHealth(serviceName: keyof typeof serviceConfig) {
-    try {
-      const service = serviceConfig[serviceName];
-
-      const response = await firstValueFrom(
-        // tipo o response para que o typescript saiba que o retorno da requisição vai ser um objeto com a propriedade status do tipo string
-        this.httpService.get<{ status: string }>(`${service.url}/health`, {
-          timeout: 3000,
-        }),
-      );
-
-      return { status: 'healthy', data: response.data };
-    } catch (error) {
-      // faço um type guard para verificar se o erro é uma instância de Error, caso seja, pego a mensagem do erro, caso não seja, retorno uma mensagem padrão
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { status: 'unhealthy', error: message };
-    }
   }
 
   private createServiceFallback(

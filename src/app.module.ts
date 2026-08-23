@@ -14,9 +14,9 @@ import { healthCheckModule } from './common/health/health-check.module';
 import { FallbackModule } from './common/fallback/fallback.module';
 import { CicuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
 import { TimeoutModule } from './common/timeout/timeout.module';
-import { TimeoutService } from './common/timeout.service';
 import { RetryModule } from './common/retry/retry.module';
-import { RetryService } from './common/retry.service';
+import { TimeoutService } from './common/timeout/timeout.service';
+import { RetryService } from './common/retry/retry.service';
 
 @Module({
   imports: [
