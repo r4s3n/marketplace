@@ -4,7 +4,7 @@ import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors();
+  app.enableCors(); // configurando o CORS para permitir requisições de qualquer origem
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true, // transforma os dados recebidos para o tipo esperado
