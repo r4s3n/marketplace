@@ -11,4 +11,8 @@ export interface PaymentOrderMessage {
   paymentMethod: string;
   description?: string;
   createdAt?: Date;
+  metadata?: {
+    service: string;
+    timeStamp: string;
+  };
 }
