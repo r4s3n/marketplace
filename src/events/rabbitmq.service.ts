@@ -123,4 +123,65 @@ export class RabbitmqService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`❌ Error publishing message to RabbitMQ:`, error);
     }
   }
+
+  // para consumir as mensagens de uma fila, primeiro eu preciso me inscrever nela
+  async subscribeToqueue(
+    queueName: string,
+    exchange: string,
+    routingKey: string,
+    callback: (message: unknown) => Promise<void>,
+  ): Promise<void> {
+    try {
+      if (!this.channel) {
+        throw new Error('RabbitMQ channel not available');
+      }
+
+      // garante que a fila existe, e como verificar se o centro de triagem da mensagem existe
+      await this.channel.assertExchange(exchange, 'topic', {
+        durable: true,
+      });
+
+      // pego a fila existente, se não existir, crio uma fila com o nome
+      const queue = await this.channel.assertQueue(queueName, {
+        durable: true,
+        arguments: {
+          'x-message-ttl': 86400000, //tempo total de duranção da mensagem, 1h
+          'x-max-length': 10000, //maximo de mensagens que ficarão na fila
+        },
+      });
+
+      // conecto a fila com o meu centro de triagem(exchange) usando o routing key
+      await this.channel.bindQueue(queue.queue, exchange, routingKey);
+      // falo quantas mensagens vou ler por vez, neste caso, uma por vez
+      await this.channel.prefetch(1);
+
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+      await this.channel.consume(queue.queue, async (msg) => {
+        if (msg) {
+          try {
+            const message: unknown = JSON.parse(msg.content.toString());
+            this.logger.log(`✉️ Message received from queue: ${queueName}`);
+            this.logger.debug(`Message content: ${JSON.stringify(message)}`);
+            await callback(message);
+
+            // aceitamos a mensagem
+            this.channel.ack(msg);
+
+            this.logger.log(
+              `✅ Message processed successfully from queue: ${queueName}`,
+            );
+          } catch (error) {
+            this.logger.error(`❌ Error processing message:`, error);
+            // negamos a mensagem
+            this.channel.nack(msg, false, false);
+          }
+        }
+      });
+      this.logger.log(
+        `✅ Subscribed to queue: ${queueName} with routing key: ${routingKey}`,
+      );
+    } catch (error) {
+      this.logger.error(`❌ Error subscribing to queue ${queueName}:`, error);
+    }
+  }
 }
