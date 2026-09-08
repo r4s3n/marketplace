@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RabbitmqService } from '../rabbitmq.service';
+import { RabbitmqService } from '../rabbitmq/rabbitmq.service';
 import { PaymentOrderMessage } from '../payment-queue.interface';
 
 @Injectable()
