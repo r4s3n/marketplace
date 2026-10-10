@@ -9,6 +9,7 @@ import { QueryFailedError } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
 import { UserStatus } from '../users/enums/user-status.enum';
+import { PublicUser, toPublicUser } from '../users/public-user';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -18,8 +19,6 @@ const UNIQUE_VIOLATION = '23505'; // código do PostgreSQL para violação de un
 const INVALID_CREDENTIALS = 'Credenciais inválidas';
 // comparado quando o e-mail não existe, para igualar o tempo de resposta
 const DUMMY_HASH = hashSync('dummy-password', SALT_ROUNDS);
-
-export type PublicUser = Omit<User, 'password'>;
 
 export type LoginResponse = { user: PublicUser; token: string };
 
@@ -53,7 +52,7 @@ export class AuthService {
       throw error;
     }
 
-    return this.toPublicUser(created);
+    return toPublicUser(created);
   }
 
   async login(dto: LoginDto): Promise<LoginResponse> {
@@ -80,13 +79,7 @@ export class AuthService {
     };
     const token = await this.jwtService.signAsync(payload);
 
-    return { user: this.toPublicUser(user), token };
-  }
-
-  private toPublicUser(user: User): PublicUser {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...publicUser } = user;
-    return publicUser;
+    return { user: toPublicUser(user), token };
   }
 
   private isUniqueViolation(error: unknown): boolean {
