@@ -15,6 +15,7 @@ import { QueryFailedError } from 'typeorm';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { CreateUserData, UsersService } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
 import { UserRole } from '../users/enums/user-role.enum';
@@ -200,7 +201,9 @@ describe('AuthService', () => {
       usersService.findByEmail.mockResolvedValue(storedUser);
 
       const { token } = await service.login(loginDto);
-      const payload = jwtService.verify<Record<string, unknown>>(token);
+      const payload = jwtService.verify<
+        JwtPayload & { iat: number; exp: number }
+      >(token);
 
       expect(Object.keys(payload).sort()).toEqual(
         ['sub', 'email', 'role', 'iat', 'exp'].sort(),
@@ -210,7 +213,7 @@ describe('AuthService', () => {
         email: storedUser.email,
         role: storedUser.role,
       });
-      expect((payload.exp as number) - (payload.iat as number)).toBe(86400);
+      expect(payload.exp - payload.iat).toBe(86400);
     });
 
     it('gera token inválido para outro segredo', async () => {
