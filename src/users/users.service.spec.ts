@@ -10,6 +10,7 @@ describe('UsersService', () => {
   let service: UsersService;
   const repository = {
     findOne: jest.fn<(options: unknown) => Promise<User | null>>(),
+    find: jest.fn<(options: unknown) => Promise<User[]>>(),
     create: jest.fn<(data: Partial<User>) => User>(),
     save: jest.fn<(user: User) => Promise<User>>(),
   };
@@ -38,6 +39,30 @@ describe('UsersService', () => {
     await expect(service.findByEmail('maria@example.com')).resolves.toBe(user);
     expect(repository.findOne).toHaveBeenCalledWith({
       where: { email: 'maria@example.com' },
+    });
+  });
+
+  it('findById busca o usuário pelo id', async () => {
+    const user = { id: '1', email: 'maria@example.com' } as User;
+    repository.findOne.mockResolvedValue(user);
+
+    await expect(service.findById('1')).resolves.toBe(user);
+    expect(repository.findOne).toHaveBeenCalledWith({ where: { id: '1' } });
+  });
+
+  it('findById retorna null quando o usuário não existe', async () => {
+    repository.findOne.mockResolvedValue(null);
+
+    await expect(service.findById('1')).resolves.toBeNull();
+  });
+
+  it('findActiveSellers filtra no banco por role seller e status active', async () => {
+    const sellers = [{ id: '1', role: UserRole.SELLER } as User];
+    repository.find.mockResolvedValue(sellers);
+
+    await expect(service.findActiveSellers()).resolves.toBe(sellers);
+    expect(repository.find).toHaveBeenCalledWith({
+      where: { role: UserRole.SELLER, status: UserStatus.ACTIVE },
     });
   });
 
