@@ -18,4 +18,4 @@ async function bootstrap() {
 
   console.log(`👤 Users Service running on port ${port}`);
 }
-bootstrap();
+void bootstrap();
