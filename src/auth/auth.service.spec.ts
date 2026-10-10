@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ConflictException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { compare } from 'bcryptjs';
 import { QueryFailedError } from 'typeorm';
@@ -10,12 +11,18 @@ import { User } from '../users/entities/user.entity';
 import { UserRole } from '../users/enums/user-role.enum';
 import { UserStatus } from '../users/enums/user-status.enum';
 
+const JWT_SECRET = 'test-secret';
+
 describe('AuthService', () => {
   let service: AuthService;
   const usersService = {
     findByEmail: jest.fn<UsersService['findByEmail']>(),
     create: jest.fn<UsersService['create']>(),
   };
+  const jwtService = new JwtService({
+    secret: JWT_SECRET,
+    signOptions: { expiresIn: 86400 },
+  });
 
   const dto: RegisterDto = {
     email: 'maria@example.com',
@@ -45,6 +52,7 @@ describe('AuthService', () => {
       providers: [
         AuthService,
         { provide: UsersService, useValue: usersService },
+        { provide: JwtService, useValue: jwtService },
       ],
     }).compile();
 
