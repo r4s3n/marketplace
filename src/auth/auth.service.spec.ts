@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { compare } from 'bcryptjs';
@@ -12,8 +13,8 @@ import { UserStatus } from '../users/enums/user-status.enum';
 describe('AuthService', () => {
   let service: AuthService;
   const usersService = {
-    findByEmail: jest.fn(),
-    create: jest.fn(),
+    findByEmail: jest.fn<UsersService['findByEmail']>(),
+    create: jest.fn<UsersService['create']>(),
   };
 
   const dto: RegisterDto = {
@@ -88,16 +89,14 @@ describe('AuthService', () => {
 
       await service.register(dto);
 
-      const [{ password }] = usersService.create.mock.calls[0] as [
-        CreateUserData,
-      ];
+      const [{ password }] = usersService.create.mock.calls[0];
       expect(password).not.toBe(dto.password);
       expect(password).toMatch(/^\$2[ab]\$10\$/);
       await expect(compare(dto.password, password)).resolves.toBe(true);
     });
 
     it('lança 409 quando o e-mail já está cadastrado', async () => {
-      usersService.findByEmail.mockResolvedValue({ id: '1' });
+      usersService.findByEmail.mockResolvedValue({ id: '1' } as User);
 
       await expect(service.register(dto)).rejects.toThrow(
         new ConflictException('Email já cadastrado'),

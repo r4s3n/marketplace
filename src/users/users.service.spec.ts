@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { UsersService } from './users.service';
@@ -8,9 +9,9 @@ import { UserStatus } from './enums/user-status.enum';
 describe('UsersService', () => {
   let service: UsersService;
   const repository = {
-    findOne: jest.fn(),
-    create: jest.fn(),
-    save: jest.fn(),
+    findOne: jest.fn<(options: unknown) => Promise<User | null>>(),
+    create: jest.fn<(data: Partial<User>) => User>(),
+    save: jest.fn<(user: User) => Promise<User>>(),
   };
 
   beforeEach(async () => {
