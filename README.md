@@ -57,6 +57,62 @@ $ pnpm run test:e2e
 $ pnpm run test:cov
 ```
 
+## Fluxo E2E com users-service
+
+O gateway (porta 3005) encaminha `/auth/*` e `/users/*` para o users-service (porta 3000). As rotas `/users/*` exigem JWT, que o próprio gateway valida antes de chamar o users-service.
+
+### Pré-requisitos
+
+1. Postgres do users-service no ar: `docker compose up -d` em `users-service/`.
+2. `.env` do gateway com `USERS_SERVICE_URL=http://localhost:3000` e **o mesmo `JWT_SECRET` do users-service** (ver `.env.example`).
+3. Os dois serviços rodando: `pnpm start:dev` em `users-service/` e em `api-gateway/`.
+
+### Passo a passo (somente pela porta 3005)
+
+```bash
+# 1. registra um seller → 201 (sem password na resposta)
+curl -X POST http://localhost:3005/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@example.com","password":"senha123","firstName":"Maria","lastName":"Silva","role":"seller"}'
+
+# 2. login → 200 com { user, token }
+curl -X POST http://localhost:3005/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@example.com","password":"senha123"}'
+
+TOKEN=<token retornado no login>
+
+# 3. perfil do usuário logado → 200
+curl http://localhost:3005/users/profile -H "Authorization: Bearer $TOKEN"
+
+# 4. vendedores ativos → 200 com array
+curl http://localhost:3005/users/sellers -H "Authorization: Bearer $TOKEN"
+
+# 5. sem token ou com token adulterado → 401 (o users-service não é chamado)
+curl http://localhost:3005/users/profile
+curl http://localhost:3005/users/profile -H "Authorization: Bearer ${TOKEN}x"
+```
+
+Erros do users-service são repassados com o mesmo status: e-mail duplicado no registro → `409`, credenciais inválidas → `401`. Com o users-service fora do ar, `/auth/*` responde `503` (ou `504` em timeout).
+
+### Health e documentação
+
+```bash
+# dispara o health check de todos os serviços (preenche o cache)
+curl http://localhost:3005/health/ready
+
+# status do users-service visto pelo gateway → healthy / unhealthy
+curl http://localhost:3005/health/services/users
+
+# health direto no users-service
+curl http://localhost:3000/health
+```
+
+- Swagger do gateway: http://localhost:3005/api
+- Swagger do users-service: http://localhost:3000/api
+
+> Atenção: `POST /auth/register` no gateway é limitado a 3 requisições por minuto.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
