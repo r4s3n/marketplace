@@ -17,6 +17,7 @@ import { TimeoutModule } from './common/timeout/timeout.module';
 import { RetryModule } from './common/retry/retry.module';
 import { TimeoutService } from './common/timeout/timeout.service';
 import { RetryService } from './common/retry/retry.service';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { RetryService } from './common/retry/retry.service';
     CicuitBreakerModule,
     TimeoutModule,
     RetryModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [
