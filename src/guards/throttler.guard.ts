@@ -7,37 +7,45 @@ import {
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
+  // rastreamos por IP + user-agent
   protected getTracker(req: Record<string, string>): Promise<string> {
     return Promise.resolve(`${req.ip}-${req.headers['user-agent']}`);
   }
 
-  // vou pegar o context, o limit e o ttl
+  // chamado uma vez para cada perfil configurado (short, medium, long)
   protected async handleRequest(
     requestProps: ThrottlerRequest,
   ): Promise<boolean> {
-    const { context, limit, ttl } = requestProps; // pegamos os valores dentro de ThrottlerRequest
+    // limit e ttl já vêm resolvidos pela lib, considerando o @Throttle() da rota
+    const { context, limit, ttl, throttler, blockDuration } = requestProps;
     const { req, res } = this.getRequestResponse(context);
-    const throttles = this.reflector.get('throttler', context.getHandler()); // pegamos o nome da config de requisição. Ex: 'short'
-    const throttlerName = throttles ? Object.keys(throttles)[0] : 'default'; // da lista, pegamos o primeiro valor ou usamos o default
+    const throttlerName = throttler.name ?? 'default'; // cada perfil tem sua própria chave/contagem
     const tracker = await this.getTracker(req);
     const key = this.generateKey(context, tracker, throttlerName);
 
-    const totalHits = await this.storageService.increment(
-      key, //chave de rastreamento que criamos acima
-      ttl, // time to live
-      limit, // o limit de requisições
-      1, // o valor inclementado a cada requisição
-      throttlerName, // nome do perfil
-    );
+    // o storage devolve o registro da chave, não apenas o número de hits
+    const { totalHits, timeToExpire, isBlocked, timeToBlockExpire } =
+      await this.storageService.increment(
+        key, // chave de rastreamento que criamos acima
+        ttl, // time to live
+        limit, // o limit de requisições
+        blockDuration, // por quanto tempo fica bloqueado ao estourar o limite
+        throttlerName, // nome do perfil
+      );
 
-    if (Number(totalHits) > limit) {
-      res.setHeader('Retry-After', Math.round(ttl / 1000));
+    const suffix = throttlerName === 'default' ? '' : `-${throttlerName}`; // um header por perfil
+
+    if (isBlocked) {
+      res.setHeader(`Retry-After${suffix}`, timeToBlockExpire); // em segundos
       throw new ThrottlerException();
     }
 
-    res.setHeader(`${this.headerPrefix}-Limit`, limit); // limite de requisições
-    res.setHeader(`${this.headerPrefix}-Remaining`, limit - Number(totalHits)); // numero restante de requisições
-    res.setHeader(`${this.headerPrefix}-Reset`, Math.round(ttl / 1000)); // timestemp é a contagem de quando será resetada a contagem
+    res.setHeader(`${this.headerPrefix}-Limit${suffix}`, limit); // limite de requisições
+    res.setHeader(
+      `${this.headerPrefix}-Remaining${suffix}`,
+      Math.max(0, limit - totalHits),
+    ); // numero restante de requisições
+    res.setHeader(`${this.headerPrefix}-Reset${suffix}`, timeToExpire); // segundos até a contagem ser resetada
     return true;
   }
 }
