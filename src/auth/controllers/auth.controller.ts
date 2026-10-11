@@ -14,23 +14,23 @@ export class AuthController {
   @HttpCode(HttpStatus.OK) // Se a requisição tiver sucesso, retorna um status OK
   @ApiOperation({
     summary: 'User login',
-    description: 'Autentica um usuário e retorna JWT token e session token',
+    description: 'Autentica um usuário no users-service e retorna o JWT',
   }) // documentação swagger
   @ApiResponse({
     status: 200,
     description: 'Login successful',
-    // informo o schema de retorno do login
+    // informo o schema de retorno do login (mesmo contrato do users-service)
     schema: {
       type: 'object',
       properties: {
         user: { type: 'object' },
-        accessToken: { type: 'string' },
-        sessionToken: { type: 'string' },
-        expiresIn: { type: 'number' },
+        token: { type: 'string' },
       },
     },
   }) // documentação response swagger para test
+  @ApiResponse({ status: 400, description: 'Dados inválidos' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' }) // documentação response error swagger para test
+  @ApiResponse({ status: 503, description: 'Users service indisponível' })
   @Throttle({ short: { limit: 5, ttl: 60000 } })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
@@ -43,6 +43,7 @@ export class AuthController {
   @ApiResponse({ status: 201, description: 'Uauário registrado com sucesso!' }) // documentação response swagger para test
   @ApiResponse({ status: 400, description: 'Dados inválidos' }) // documentação response error swagger para test
   @ApiResponse({ status: 409, description: 'Email já registrado' }) // documentação response error swagger para test
+  @ApiResponse({ status: 503, description: 'Users service indisponível' })
   @Throttle({ medium: { limit: 3, ttl: 60000 } })
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
