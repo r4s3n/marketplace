@@ -1,20 +1,25 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { AuthService } from '../service/auth.service';
 import { Strategy, ExtractJwt } from 'passport-jwt';
 
-interface payload {
+// payload emitido pelo users-service no login
+export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
-  token: string;
   iat?: number;
   exp?: number;
 }
 
+export interface JwtUser {
+  userId: string;
+  email: string;
+  role: string;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly authService: AuthService) {
+  constructor() {
     // instalamos o types do passport-jwt para desenvolvimento, então tive que mudar o processo a baixo
     const jwtSecret = process.env.JWT_SECRET;
 
@@ -24,18 +29,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(), // pegamos o token do header
-      ignoreExpiration: false, // ignoramos a expiração
-      secretOrKey: jwtSecret, // e pegamos o nosso JWT_Secret do .env
+      ignoreExpiration: false, // rejeitamos tokens expirados
+      secretOrKey: jwtSecret, // mesmo JWT_SECRET do users-service
     });
   }
 
-  // vamos validar esse payload
-  async validate(payload: payload) {
-    if (!payload) {
-      throw new UnauthorizedException();
-    }
-    const user = await this.authService.validateJwtToken(payload.token);
-    if (!user) {
+  // assinatura e expiração já foram verificadas pelo passport: só mapeamos o payload
+  validate(payload: JwtPayload): JwtUser {
+    if (!payload?.sub) {
       throw new UnauthorizedException();
     }
 
