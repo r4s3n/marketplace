@@ -117,7 +117,7 @@ A entidade deve ter **apenas** esses campos. Nenhum campo é único além do `id
 
 ```
 products-service/
-├── docs/specs/scaffold.md
+├── docs/specs/01-scaffold.md
 ├── docker-compose.yaml
 ├── .env / .env.example
 └── src/
