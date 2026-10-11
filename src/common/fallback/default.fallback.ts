@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 @Injectable()
 export class defaultFallbackService {
@@ -24,7 +28,10 @@ export class defaultFallbackService {
     // eslint-disable-next-line @typescript-eslint/require-await
     return async (): Promise<never> => {
       this.logger.error(`Fallback error for ${serviceName}: ${errorMessage}`);
-      throw new Error(`${serviceName} service unavailable: ${errorMessage}`);
+      // 503 para o cliente, em vez de um Error genérico (500)
+      throw new ServiceUnavailableException(
+        `${serviceName} service unavailable: ${errorMessage}`,
+      );
     };
   }
 

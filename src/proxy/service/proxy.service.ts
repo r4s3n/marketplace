@@ -1,5 +1,6 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
+import { AxiosResponse, isAxiosError } from 'axios';
 import { serviceConfig } from '../../config/gateway.config';
 import { firstValueFrom } from 'rxjs';
 import { CircuitBreakerService } from '../../common/circuit-breaker/circuit-breaker.service';
@@ -16,6 +17,14 @@ interface UserInfo {
 }
 
 type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
+
+// erro 4xx retornado pelo serviço (ex.: 404, 401): não indica indisponibilidade
+class UpstreamClientError {
+  constructor(
+    readonly status: number,
+    readonly body: unknown,
+  ) {}
+}
 
 @Injectable()
 export class ProxyService {
@@ -47,54 +56,77 @@ export class ProxyService {
     const fallback = this.createServiceFallback(serviceName, method, path); // nosso fallback
 
     // PRIMEIRA CAMADA => CIRCUIT BREAKER
-    return this.circuitBreakerService.executeWithCircuitBreaker(
-      async () => {
-        // SEGUNDA CAMADA => RETRY
-        return await this.retryService.executeWithExponentialBackoff(
-          async () => {
-            // TERCEIRA CAMADA => TIMEOUT
-            return await this.timeoutService.executeWithCustomTimeout(
-              // Operation
-              async () => {
-                const enhancedHeaders = {
-                  ...headers,
-                  'x-user-id': userInfo?.userId,
-                  'x-user-email': userInfo?.email,
-                  'x-user-role': userInfo?.role,
-                };
+    const result: unknown =
+      await this.circuitBreakerService.executeWithCircuitBreaker(
+        async () => {
+          // SEGUNDA CAMADA => RETRY
+          return await this.retryService.executeWithExponentialBackoff(
+            async () => {
+              // TERCEIRA CAMADA => TIMEOUT
+              return await this.timeoutService.executeWithCustomTimeout(
+                // Operation
+                async () => {
+                  const enhancedHeaders = {
+                    ...headers,
+                    'x-user-id': userInfo?.userId,
+                    'x-user-email': userInfo?.email,
+                    'x-user-role': userInfo?.role,
+                  };
 
-                const response = await firstValueFrom(
-                  this.httpService.request({
-                    method: method.toLowerCase(),
-                    url,
-                    data,
-                    headers: enhancedHeaders,
-                    timeout: service.timeout,
-                  }),
-                );
+                  let response: AxiosResponse;
+                  try {
+                    response = await firstValueFrom(
+                      this.httpService.request({
+                        method: method.toLowerCase(),
+                        url,
+                        data,
+                        headers: enhancedHeaders,
+                        timeout: service.timeout,
+                      }),
+                    );
+                  } catch (error) {
+                    // 4xx é resposta de negócio (serviço saudável): devolvemos como resultado
+                    // para não acionar retry nem contar falha no circuit breaker
+                    if (isAxiosError(error) && error.response) {
+                      const { status, data: body } = error.response;
+                      if (status < 500)
+                        return new UpstreamClientError(status, body);
+                    }
+                    throw error; // rede, timeout e 5xx seguem para retry/circuit breaker
+                  }
 
-                // se o nosso response for sucesso, eu guardo no cache
-                if (method.toLowerCase() === 'get') {
-                  this.cacheFallbackService.setCacheData(
-                    `${serviceName}-${path}`,
-                    response.data,
-                  );
-                }
+                  // se o nosso response for sucesso, eu guardo no cache
+                  if (method.toLowerCase() === 'get') {
+                    this.cacheFallbackService.setCacheData(
+                      `${serviceName}-${path}`,
+                      response.data,
+                    );
+                  }
 
-                // retorno apenas os dados e não o response completo
-                return response.data;
-              },
-              service.timeout, // tempo de Timeout
-            );
-          },
-          4, // MAX retries
-        );
-      },
+                  // retorno apenas os dados e não o response completo
+                  return response.data;
+                },
+                service.timeout, // tempo de Timeout
+              );
+            },
+            4, // MAX retries
+          );
+        },
 
-      `proxy-${serviceName}`, // key
-      fallback, // nosso fallback personalizado
-      { failureThreshold: 3, timeout: 30000, resetTimeout: 30000 }, // config
-    );
+        `proxy-${serviceName}`, // key
+        fallback, // nosso fallback personalizado
+        { failureThreshold: 3, timeout: 30000, resetTimeout: 30000 }, // config
+      );
+
+    // repassa ao cliente o mesmo status e corpo do erro 4xx do serviço
+    if (result instanceof UpstreamClientError) {
+      throw new HttpException(
+        result.body as Record<string, unknown>,
+        result.status,
+      );
+    }
+
+    return result;
   }
 
   private createServiceFallback(
