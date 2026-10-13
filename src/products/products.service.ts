@@ -16,7 +16,10 @@ export class ProductsService {
   ) {}
 
   // sellerId vem do token, nunca do corpo da requisição
-  create(dto: CreateProductDto, user: AuthenticatedUser): Promise<Product> {
+  async create(
+    dto: CreateProductDto,
+    user: AuthenticatedUser,
+  ): Promise<Product> {
     if (user.role !== UserRole.SELLER) {
       throw new ForbiddenException(ONLY_SELLERS);
     }
