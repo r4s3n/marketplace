@@ -17,7 +17,16 @@ export class Product {
   @Column({ type: 'text' })
   description: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 }) // o pg devolve decimal como string
+  // o pg devolve decimal como string; o transformer converte de volta para número
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    transformer: {
+      to: (value: number) => value,
+      from: (value: string | null) => (value === null ? null : Number(value)),
+    },
+  })
   price: number;
 
   @Column({ type: 'int', default: 0 })
