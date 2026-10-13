@@ -1,18 +1,24 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserRole } from '../auth/enums/user-role.enum';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateProductDto } from './dto/create-product.dto';
 import { Product } from './entities/product.entity';
-import { ONLY_SELLERS, ProductsService } from './products.service';
+import {
+  ONLY_SELLERS,
+  PRODUCT_NOT_FOUND,
+  ProductsService,
+} from './products.service';
 
 describe('ProductsService', () => {
   let service: ProductsService;
   const repository = {
     create: jest.fn<(data: Partial<Product>) => Product>(),
     save: jest.fn<(product: Product) => Promise<Product>>(),
+    find: jest.fn<(options: unknown) => Promise<Product[]>>(),
+    findOneBy: jest.fn<(where: unknown) => Promise<Product | null>>(),
   };
 
   const dto: CreateProductDto = {
@@ -75,6 +81,71 @@ describe('ProductsService', () => {
       repository.save.mockRejectedValue(error);
 
       await expect(service.create(dto, seller)).rejects.toBe(error);
+    });
+  });
+
+  describe('findAll', () => {
+    it('busca só os ativos, mais recentes primeiro', async () => {
+      const list = [{ ...dto, id: '1' }] as Product[];
+      repository.find.mockResolvedValue(list);
+
+      await expect(service.findAll()).resolves.toBe(list);
+      expect(repository.find).toHaveBeenCalledWith({
+        where: { isActive: true },
+        order: { createdAt: 'DESC' },
+      });
+    });
+
+    it('sem produtos ativos devolve []', async () => {
+      repository.find.mockResolvedValue([]);
+
+      await expect(service.findAll()).resolves.toEqual([]);
+    });
+  });
+
+  describe('findBySeller', () => {
+    it('busca só os ativos do vendedor, mais recentes primeiro', async () => {
+      const list = [{ ...dto, id: '1', sellerId: seller.id }] as Product[];
+      repository.find.mockResolvedValue(list);
+
+      await expect(service.findBySeller(seller.id)).resolves.toBe(list);
+      expect(repository.find).toHaveBeenCalledWith({
+        where: { sellerId: seller.id, isActive: true },
+        order: { createdAt: 'DESC' },
+      });
+    });
+
+    it('vendedor sem produtos ativos devolve []', async () => {
+      repository.find.mockResolvedValue([]);
+
+      await expect(service.findBySeller(seller.id)).resolves.toEqual([]);
+    });
+  });
+
+  describe('findOne', () => {
+    const id = '9b2e4c1a-7f3d-4e8b-a6c5-1d2f3e4a5b6c';
+
+    it('devolve o produto encontrado', async () => {
+      const product = { ...dto, id, isActive: true } as Product;
+      repository.findOneBy.mockResolvedValue(product);
+
+      await expect(service.findOne(id)).resolves.toBe(product);
+      expect(repository.findOneBy).toHaveBeenCalledWith({ id });
+    });
+
+    it('devolve o produto mesmo inativo', async () => {
+      const product = { ...dto, id, isActive: false } as Product;
+      repository.findOneBy.mockResolvedValue(product);
+
+      await expect(service.findOne(id)).resolves.toBe(product);
+    });
+
+    it('produto inexistente → 404', async () => {
+      repository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.findOne(id)).rejects.toThrow(
+        new NotFoundException(PRODUCT_NOT_FOUND),
+      );
     });
   });
 });
