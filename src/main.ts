@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -13,9 +14,23 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.PORT ?? 3000;
+  // documentação em /api (registrada fora dos controllers, não passa pelo guard global)
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Checkout Service')
+    .setDescription('Carrinho e pedidos do marketplace')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .addTag('Health', 'Health check do serviço')
+    .build();
+  SwaggerModule.setup(
+    'api',
+    app,
+    SwaggerModule.createDocument(app, swaggerConfig),
+  );
+
+  const port = process.env.PORT ?? 3003;
   await app.listen(port);
 
   console.log(`🛒 Checkout Service running on port ${port}`);
 }
-bootstrap();
+void bootstrap();
