@@ -59,7 +59,7 @@ $ pnpm run test:cov
 
 ## Fluxo E2E com users-service
 
-O gateway (porta 3005) encaminha `/auth/*` e `/users/*` para o users-service (porta 3000). As rotas `/users/*` exigem JWT, que o próprio gateway valida antes de chamar o users-service.
+O gateway (porta 3005) encaminha `/auth/*` e `/users/*` para o users-service (porta 3000). Todas essas rotas passam pelo `ProxyService` (circuit breaker, retry, timeout e fallback), declaradas no `UsersController`. `POST /auth/register` e `POST /auth/login` são públicas e encaminham o corpo sem alterações (a validação é do users-service). `GET /auth/validate-token` e as rotas `/users/*` exigem JWT, que o próprio gateway valida antes de chamar o users-service.
 
 ### Pré-requisitos
 
@@ -82,18 +82,31 @@ curl -X POST http://localhost:3005/auth/login \
 
 TOKEN=<token retornado no login>
 
-# 3. perfil do usuário logado → 200
+# 3. valida o token → 200 com { userId, email, role }
+curl http://localhost:3005/auth/validate-token -H "Authorization: Bearer $TOKEN"
+
+# 4. perfil do usuário logado → 200
 curl http://localhost:3005/users/profile -H "Authorization: Bearer $TOKEN"
 
-# 4. vendedores ativos → 200 com array
+# 5. vendedores ativos → 200 com array
 curl http://localhost:3005/users/sellers -H "Authorization: Bearer $TOKEN"
 
-# 5. sem token ou com token adulterado → 401 (o users-service não é chamado)
+# 6. sem token ou com token adulterado → 401 (o users-service não é chamado)
 curl http://localhost:3005/users/profile
 curl http://localhost:3005/users/profile -H "Authorization: Bearer ${TOKEN}x"
+
+# 7. mesmo e-mail de novo → 409 com a mensagem do users-service
+curl -X POST http://localhost:3005/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@example.com","password":"senha123","firstName":"Maria","lastName":"Silva","role":"seller"}'
+
+# 8. senha errada → 401 com a mensagem do users-service
+curl -X POST http://localhost:3005/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@example.com","password":"errada123"}'
 ```
 
-Erros do users-service são repassados com o mesmo status: e-mail duplicado no registro → `409`, credenciais inválidas → `401`. Com o users-service fora do ar, `/auth/*` responde `503` (ou `504` em timeout).
+Erros 4xx do users-service (`400`, `401`, `404`, `409`) são repassados pelo `ProxyService` com o mesmo status e corpo, sem retry e sem contar falha no circuit breaker. Com o users-service fora do ar, as rotas respondem `503` (após as tentativas de retry, o que pode levar alguns segundos).
 
 ### Health e documentação
 
@@ -111,7 +124,7 @@ curl http://localhost:3000/health
 - Swagger do gateway: http://localhost:3005/api
 - Swagger do users-service: http://localhost:3000/api
 
-> Atenção: `POST /auth/register` no gateway é limitado a 3 requisições por minuto.
+> Atenção: no gateway, `POST /auth/register` é limitado a 3 requisições por minuto e `POST /auth/login` a 5.
 
 ## Fluxo E2E com products-service
 
