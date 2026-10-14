@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -9,6 +10,8 @@ import {
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 import { Cart } from './cart.entity';
 
+// um item por produto no carrinho: adicionar de novo soma a quantidade
+@Index('UQ_cart_items_cart_product', ['cartId', 'productId'], { unique: true })
 @Entity('cart_items')
 export class CartItem {
   @PrimaryGeneratedColumn('uuid')

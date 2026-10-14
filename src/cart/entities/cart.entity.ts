@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -10,6 +11,11 @@ import { decimalTransformer } from '../../common/transformers/decimal.transforme
 import { CartStatus } from '../enums/cart-status.enum';
 import { CartItem } from './cart-item.entity';
 
+// no máximo um carrinho active por usuário (completed e abandoned não contam)
+@Index('UQ_carts_user_active', ['userId'], {
+  unique: true,
+  where: `"status" = 'active'`,
+})
 @Entity('carts')
 export class Cart {
   @PrimaryGeneratedColumn('uuid')
