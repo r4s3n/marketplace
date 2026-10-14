@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { RabbitmqService } from '../rabbitmq/rabbitmq.service';
 import { PaymentQueueService } from './payment-queue.service';
 
 describe('PaymentQueueService', () => {
@@ -6,7 +7,11 @@ describe('PaymentQueueService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PaymentQueueService],
+      providers: [
+        PaymentQueueService,
+        // mock: o teste não deve depender do RabbitMQ
+        { provide: RabbitmqService, useValue: { publishMessage: jest.fn() } },
+      ],
     }).compile();
 
     service = module.get<PaymentQueueService>(PaymentQueueService);
