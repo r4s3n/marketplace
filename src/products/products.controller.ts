@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
@@ -19,16 +18,8 @@ import {
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtUser } from '../auth/strategies/jwt.strategy';
 import { JwtAuthGuard } from '../guards/auth.guard';
+import { segment } from '../common/utils/path-segment';
 import { ProxyService } from '../proxy/service/proxy.service';
-
-// codifica o parâmetro como um único segmento do caminho
-// '.' e '..' são barrados: o axios normaliza a URL e eles subiriam de rota no products-service
-function segment(value: string): string {
-  if (value === '.' || value === '..') {
-    throw new BadRequestException('Parâmetro de rota inválido');
-  }
-  return encodeURIComponent(value);
-}
 
 // schema só para documentação: o corpo segue intacto e quem valida é o products-service
 const createProductSchema = {
