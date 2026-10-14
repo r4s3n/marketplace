@@ -11,7 +11,7 @@ import { App } from 'supertest/types';
 import { Public } from '../src/auth/decorators/public.decorator';
 import { UserRole } from '../src/auth/enums/user-role.enum';
 import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard';
-import { AuthenticatedUser } from '../src/auth/interfaces/authenticated-user.interface';
+import type { AuthenticatedUser } from '../src/auth/interfaces/authenticated-user.interface';
 import { JwtPayload } from '../src/auth/interfaces/jwt-payload.interface';
 import { JwtStrategy } from '../src/auth/strategies/jwt.strategy';
 
