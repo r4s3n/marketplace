@@ -20,7 +20,7 @@ export class PaymentQueueService {
       // adiciono mais informações ao meu pagamento
       const enrichmentMessage: PaymentOrderMessage = {
         ...paymentOrder,
-        createdAt: paymentOrder.createdAt || new Date(),
+        createdAt: paymentOrder.createdAt || new Date().toISOString(),
         metadata: {
           service: 'checkout-service',
           timeStamp: new Date().toISOString(),
@@ -72,8 +72,41 @@ export class PaymentQueueService {
       return false;
     }
 
+    // o payments-service rejeita a mensagem sem forma de pagamento
+    if (!paymentOrder.paymentMethod) {
+      this.logger.error('❌ Invalid payment order: missing paymentMethod');
+
+      return false;
+    }
+
     if (!paymentOrder.items || paymentOrder.items.length === 0) {
       this.logger.error('❌ Invalid payment order: no items');
+
+      return false;
+    }
+
+    const invalidItem = paymentOrder.items.some(
+      (item) =>
+        !item.productId ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0 ||
+        !(item.price > 0),
+    );
+    if (invalidItem) {
+      this.logger.error('❌ Invalid payment order: invalid item');
+
+      return false;
+    }
+
+    // soma em centavos para não acumular erro de ponto flutuante
+    const itemsTotalInCents = paymentOrder.items.reduce(
+      (acc, item) => acc + Math.round(item.price * 100) * item.quantity,
+      0,
+    );
+    if (itemsTotalInCents !== Math.round(paymentOrder.amount * 100)) {
+      this.logger.error(
+        '❌ Invalid payment order: amount does not match items total',
+      );
 
       return false;
     }

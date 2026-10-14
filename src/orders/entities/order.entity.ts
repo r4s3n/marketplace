@@ -2,11 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 import { OrderStatus } from '../enums/order-status.enum';
+import { OrderItem } from './order-item.entity';
 
 @Entity('orders')
 export class Order {
@@ -32,6 +34,13 @@ export class Order {
 
   @Column({ length: 50 }) // ex.: credit_card, o mesmo enviado ao payments-service
   paymentMethod: string;
+
+  // cascade: salvar o pedido persiste os itens; eager: itens vêm no find
+  @OneToMany(() => OrderItem, (item) => item.order, {
+    cascade: true,
+    eager: true,
+  })
+  items: OrderItem[];
 
   @CreateDateColumn()
   createdAt: Date;

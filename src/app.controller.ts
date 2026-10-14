@@ -20,7 +20,7 @@ export class AppController {
     const testMessage: PaymentOrderMessage = {
       orderId: body?.orderId || `test-order-${Date.now()}`,
       userId: body?.userId || 'test-user-123',
-      amount: body?.amount || 199.99,
+      amount: body?.amount || 199.98, // 2 × 99.99, igual à soma dos itens
       items: body?.items || [
         {
           productId: 'product-1',
@@ -30,7 +30,7 @@ export class AppController {
       ],
       paymentMethod: body?.paymentMethod || 'credit_card',
       description: body?.description || 'Mensagem de teste',
-      createdAt: new Date(),
+      createdAt: new Date().toISOString(),
     };
 
     await this.paymentQueueService.publishPaymentOrder(testMessage);

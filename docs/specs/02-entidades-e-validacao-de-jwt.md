@@ -149,14 +149,23 @@ Valores exatos de `OrderStatus`: `pending`, `paid`, `failed` e `cancelled`.
 | `total`         | decimal(10,2)       | sim         | —          | Lido como número.                                                |
 | `status`        | enum `OrderStatus`  | sim         | `pending`  |                                                                  |
 | `paymentMethod` | varchar(50)         | sim         | —          | Ex.: `credit_card`, o mesmo valor que vai na mensagem de pagamento. |
+| `items`         | relação 1:N `OrderItem` | —       | —          | Não é coluna. Com **cascade** e **eager** (adicionado na seção 16). |
 | `createdAt`     | timestamp           | sim         | automático |                                                                  |
 | `updatedAt`     | timestamp           | sim         | automático |                                                                  |
+
+### RF-06A: Entidade `OrderItem` (tabela `order_items`, adicionada na seção 16)
+
+Cópia dos itens do carrinho no fechamento do pedido. Mesmas colunas do `CartItem`, trocando `cart`/`cartId` por `order`/`orderId`:
+
+- `orderId` (uuid) é FK para `orders.id` com **ON DELETE CASCADE**, e a relação `order` usa a mesma coluna.
+- `productId` (uuid), `productName` (varchar 255), `price` e `subtotal` (decimal 10,2, lidos como número), `quantity` (int, obrigatório e sem padrão) e `createdAt`.
+- Sem `updatedAt`: o item do pedido não muda depois de criado.
 
 ### RF-07: Carregamento das entidades
 
 1. **RF-07.1**: corrigir o glob de entidades em `database.config.ts` para encontrar arquivos `.entity.ts` **e** `.entity.js`, igual ao products-service.
 2. **RF-07.2**: os demais campos do `databaseConfig` (host, porta 5435, credenciais, `synchronize`, `logging`) não mudam.
-3. **RF-07.3**: com o serviço rodando em desenvolvimento, o `synchronize` cria as tabelas `carts`, `cart_items` e `orders` e os tipos enum de status no `checkout_db`.
+3. **RF-07.3**: com o serviço rodando em desenvolvimento, o `synchronize` cria as tabelas `carts`, `cart_items`, `orders` e `order_items` e os tipos enum de status no `checkout_db`.
 
 ## 6. Requisitos funcionais: módulos de domínio
 
@@ -167,7 +176,7 @@ Valores exatos de `OrderStatus`: `pending`, `paid`, `failed` e `cancelled`.
 
 ### RF-09: `OrdersModule`
 
-1. **RF-09.1**: módulo em `src/orders/` que registra `Order` com `TypeOrmModule.forFeature`.
+1. **RF-09.1**: módulo em `src/orders/` que registra `Order` e `OrderItem` com `TypeOrmModule.forFeature`.
 2. **RF-09.2**: sem controllers, services ou rotas nesta spec.
 
 ## 7. Requisitos funcionais: autenticação JWT
@@ -293,10 +302,11 @@ checkout-service/
 │   │   └── enums/              → CartStatus
 │   ├── orders/
 │   │   ├── orders.module
-│   │   ├── entities/           → Order
-│   │   └── enums/              → OrderStatus
+│   │   ├── entities/           → Order e OrderItem
+│   │   ├── enums/              → OrderStatus
+│   │   └── mappers/            → Order → mensagem de pagamento (seção 16)
 │   ├── health/                 → HealthModule e HealthController
-│   ├── events/                 → sem alterações
+│   ├── events/                 → só os ajustes do contrato da seção 16
 │   ├── config/database.config  → glob de entidades corrigido
 │   ├── app.module              → registra os novos módulos
 │   └── main                    → Swagger e fallback da porta 3003
@@ -385,7 +395,7 @@ Nenhuma variável nova. Só o valor abaixo precisa ser preenchido:
 - **Duas propriedades na mesma coluna:** em `CartItem`, `cart` e `cartId` precisam apontar para a mesma coluna. Se a relação não for ligada explicitamente ao nome `cartId`, o TypeORM cria uma segunda coluna de FK e `cartId` fica solto.
 - **Cascade x ON DELETE CASCADE:** o cascade da relação `items` (RF-04.2) trata a persistência pelo TypeORM. O `ON DELETE CASCADE` da FK (RF-05.2) trata a remoção no banco. As duas coisas são necessárias e independentes.
 - **Eager em `Cart.items`:** funciona com os métodos do repositório (`find`, `findOne`). Em consultas com QueryBuilder, os itens precisam ser carregados explicitamente. Considerar isso nas próximas specs.
-- **`Order.cartId` sem FK:** é intencional, conforme pedido. O pedido guarda só a referência ao carrinho, e o carrinho concluído (`completed`) continua no banco com os itens. Se um carrinho for apagado, o pedido fica com uma referência órfã. Uma relação ou a cópia dos itens no pedido pode ser decidida na spec de checkout.
+- **`Order.cartId` sem FK:** é intencional. O pedido guarda os próprios itens (`OrderItem`, seção 16), então a referência ao carrinho serve só para rastreio. Se o carrinho for apagado, o pedido e a mensagem de pagamento não são afetados.
 - **Mudança de schema com `synchronize`:** em desenvolvimento, alterar uma entidade altera a tabela automaticamente e pode **apagar dados** de colunas renomeadas. Em produção o `synchronize` fica desligado e o schema vai precisar de migrations, o que fica fora desta spec.
 - **Rota de teste protegida:** `POST /test/send-message` passa a exigir token. Requisições já salvas no Postman precisam do header `Authorization`.
 - **Secret compartilhado:** se o `JWT_SECRET` divergir do users-service, toda rota protegida retorna 401 sem outro sinal de erro.
@@ -401,3 +411,29 @@ Esta aula termina com **um único commit** no repositório do checkout-service.
 - O `.env` é ignorado pelo git. O valor do `JWT_SECRET` deve ser preenchido localmente antes de validar, mas não entra no commit.
 - Antes do commit, rodar `pnpm run lint`, `pnpm run build` e `pnpm run test` e garantir que tudo passa.
 - A mensagem segue o padrão do histórico, em português. Sugestão: `feat: cria entidades de carrinho e pedido e valida JWT no checkout-service`.
+
+## 16. Ajustes após a implementação: contrato da mensagem de pagamento
+
+A validação da mensagem `PaymentOrderMessage` contra as entidades mostrou quatro problemas. Os ajustes abaixo foram aprovados depois da implementação e liberam, **só para eles**, alterações em `src/events/`.
+
+| #  | Problema                                                                                                    | Ajuste                                                                                                                                       |
+| -- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1 | O payments-service rejeita mensagem sem `paymentMethod`, mas o `publishPaymentOrderSafe` do checkout não validava o campo. | O `publishPaymentOrderSafe` passa a rejeitar `paymentMethod` vazio.                                                                           |
+| P2 | O `Order` não guardava itens: a mensagem dependia do carrinho, que pode mudar ou ser apagado depois do pedido. | Nova entidade `OrderItem` (RF-06A), com cópia dos itens no fechamento. Os itens da mensagem vêm do pedido.                                    |
+| P3 | Nenhum serviço garantia que `amount` é igual à soma dos itens.                                              | O `publishPaymentOrderSafe` rejeita item sem `productId`, com `quantity` não inteira ou ≤ 0, `price` ≤ 0 e `amount` diferente de Σ price × quantity (em centavos). |
+| P4 | `createdAt` era tipado como `Date`, mas trafega no JSON como texto.                                         | `createdAt` passa a ser `string` em ISO 8601 no checkout e no payments-service.                                                               |
+
+Outras mudanças desta seção:
+
+- Função `toPaymentOrderMessage` em `src/orders/mappers/`, que monta a mensagem só a partir do `Order` (com itens). A spec de checkout deve usá-la.
+- A mensagem de teste do `POST /test/send-message` passa a usar `amount` 199.98 (2 × 99.99) e `createdAt` em ISO 8601.
+
+### Critérios de aceite
+
+| #     | Critério                                                                                                                                         | Como verificar                                                                  |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| CA-35 | `order_items` existe, tem uma única coluna `orderId` e FK para `orders` com `ON DELETE CASCADE`; apagar um pedido apaga os itens dele.            | `\d order_items` e e2e `payment-order-message`.                                  |
+| CA-36 | A mensagem publicada tem exatamente `orderId`, `userId`, `amount`, `items` (`productId`, `quantity`, `price`), `paymentMethod`, `createdAt` e `metadata`, com `amount` e `price` numéricos. | e2e `payment-order-message`.                                                     |
+| CA-37 | Alterar o carrinho depois do pedido não muda os itens da mensagem.                                                                               | e2e `payment-order-message`.                                                     |
+| CA-38 | `publishPaymentOrderSafe` rejeita, sem publicar, cada um dos casos de P1 e P3.                                                                   | Testes unitários do `PaymentQueueService`.                                       |
+| CA-39 | `createdAt` é `string` ISO 8601 na interface dos dois serviços e na mensagem publicada.                                                         | Revisão das interfaces e testes.                                                 |
