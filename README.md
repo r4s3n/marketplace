@@ -113,6 +113,85 @@ curl http://localhost:3000/health
 
 > Atenção: `POST /auth/register` no gateway é limitado a 3 requisições por minuto.
 
+## Fluxo E2E com products-service
+
+O gateway encaminha `/products/*` para o products-service (porta 3001). Só `POST /products` exige JWT, validado pelo próprio gateway; as consultas são públicas. A regra "apenas seller cria produto" fica no products-service, e o gateway repassa o `403`.
+
+### Pré-requisitos
+
+1. Postgres do users-service e do products-service no ar: `docker compose up -d` em `users-service/` e em `products-service/`.
+2. `.env` do gateway com `PRODUCTS_SERVICE_URL=http://localhost:3001` e **o mesmo `JWT_SECRET` do users-service e do products-service** (ver `.env.example`).
+3. Os três serviços rodando: `pnpm start:dev` em `users-service/`, `products-service/` e `api-gateway/`.
+
+### Passo a passo (somente pela porta 3005)
+
+```bash
+# 1. login de um seller (registre antes, ver fluxo de users) → 200 com { user, token }
+curl -X POST http://localhost:3005/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria@example.com","password":"senha123"}'
+
+TOKEN=<token retornado no login>
+
+# 2. cria um produto → 201 com sellerId = id do seller e isActive = true
+curl -X POST http://localhost:3005/products \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"name":"Teclado mecânico","description":"Teclado ABNT2","price":349.9,"stock":15}'
+
+PRODUCT_ID=<id retornado na criação>
+SELLER_ID=<sellerId retornado na criação>
+
+# 3. catálogo (público) → 200 com array contendo o produto
+curl http://localhost:3005/products
+
+# 4. produto por id (público) → 200
+curl http://localhost:3005/products/$PRODUCT_ID
+
+# 5. produtos do vendedor (público) → 200 com array
+curl http://localhost:3005/products/seller/$SELLER_ID
+
+# 6. buyer tentando criar produto → 403 (vem do products-service)
+curl -X POST http://localhost:3005/products \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $BUYER_TOKEN" \
+  -d '{"name":"X","description":"Y","price":1,"stock":1}'
+```
+
+Erros esperados:
+
+```bash
+# sem token ou token adulterado → 401 (o products-service não é chamado)
+curl -X POST http://localhost:3005/products -H "Content-Type: application/json" -d '{}'
+
+# corpo inválido → 400 com a lista de mensagens do products-service
+curl -X POST http://localhost:3005/products \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"name":"","price":0,"stock":2.5}'
+
+# id que não é UUID → 400; UUID sem produto → 404
+curl http://localhost:3005/products/abc
+curl http://localhost:3005/products/00000000-0000-4000-8000-000000000000
+```
+
+Com o products-service fora do ar, `POST /products` responde `503`. As consultas `GET` caem no fallback do `ProxyService` e respondem `200` com um objeto padrão (`{ products: [], total: 0, page: 1, limit: 10 }`), não com erro.
+
+### Health e documentação
+
+```bash
+# dispara o health check de todos os serviços (preenche o cache)
+curl http://localhost:3005/health/ready
+
+# status do products-service visto pelo gateway → healthy / unhealthy
+curl http://localhost:3005/health/services/products
+
+# health direto no products-service
+curl http://localhost:3001/health
+```
+
+- Swagger do products-service: http://localhost:3001/api
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
