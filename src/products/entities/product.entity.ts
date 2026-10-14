@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import {
   Column,
   CreateDateColumn,
@@ -6,18 +7,23 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+// @ApiProperty só documenta a resposta no Swagger, sem afetar as colunas
 @Entity('products')
 export class Product {
+  @ApiProperty({ format: 'uuid' })
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @ApiProperty({ example: 'Teclado mecânico' })
   @Column({ length: 255 })
   name: string;
 
+  @ApiProperty({ example: 'Teclado mecânico ABNT2 com switches marrons' })
   @Column({ type: 'text' })
   description: string;
 
   // o pg devolve decimal como string; o transformer converte de volta para número
+  @ApiProperty({ example: 349.9 })
   @Column({
     type: 'decimal',
     precision: 10,
@@ -29,18 +35,23 @@ export class Product {
   })
   price: number;
 
+  @ApiProperty({ type: 'integer', example: 15 })
   @Column({ type: 'int', default: 0 })
   stock: number;
 
+  @ApiProperty({ format: 'uuid' })
   @Column({ type: 'uuid' }) // usuário do users-service, sem FK (banco separado)
   sellerId: string;
 
+  @ApiProperty({ example: true })
   @Column({ default: true })
   isActive: boolean;
 
+  @ApiProperty()
   @CreateDateColumn()
   createdAt: Date;
 
+  @ApiProperty()
   @UpdateDateColumn()
   updatedAt: Date;
 }
