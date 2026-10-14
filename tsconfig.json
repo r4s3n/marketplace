@@ -11,6 +11,8 @@
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
     "target": "ES2023",
+    // explícito: a partir do TS 6 (usado pelo VS Code) os @types não entram mais automaticamente
+    "types": ["node", "jest"],
     "sourceMap": true,
     "outDir": "./dist",
     "rootDir": "./",
