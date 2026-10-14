@@ -11,7 +11,7 @@ import { databaseConfig } from './config/database.config';
     ConfigModule.forRoot({
       isGlobal: true, // torno o config disponivel para todos os modulos
     }),
-    TypeOrmModule.forRoot(databaseConfig), // habilitamos o databaseConfig para o nosso projeto
+    TypeOrmModule.forRootAsync({ useFactory: databaseConfig }), // async para ler o .env já carregado
     EventsModule,
   ],
   controllers: [AppController],
