@@ -106,7 +106,7 @@ curl -X POST http://localhost:3005/auth/login \
   -d '{"email":"maria@example.com","password":"errada123"}'
 ```
 
-Erros 4xx do users-service (`400`, `401`, `404`, `409`) são repassados pelo `ProxyService` com o mesmo status e corpo, sem retry e sem contar falha no circuit breaker. Com o users-service fora do ar, as rotas respondem `503` (após as tentativas de retry, o que pode levar alguns segundos).
+Erros respondidos pelo users-service (4xx como `400`, `401`, `404`, `409`, e também 5xx) são repassados pelo `ProxyService` com o mesmo status e corpo, sem retry e sem contar falha no circuit breaker: se o serviço respondeu, ele está no ar. Só erro de rede e timeout contam como falha. Com o users-service fora do ar, as rotas respondem `503` com a mensagem `Serviço de usuários indisponível` (ou `Serviço de autenticação indisponível` no login). Rotas `GET` são retentadas antes disso, o que pode levar alguns segundos; `POST`, `PUT`, `PATCH` e `DELETE` não são repetidas, para não duplicar efeitos.
 
 ### Health e documentação
 
@@ -188,7 +188,7 @@ curl http://localhost:3005/products/abc
 curl http://localhost:3005/products/00000000-0000-4000-8000-000000000000
 ```
 
-Com o products-service fora do ar, `POST /products` responde `503`. As consultas `GET` caem no fallback do `ProxyService` e respondem `200` com um objeto padrão (`{ products: [], total: 0, page: 1, limit: 10 }`), não com erro.
+Com o products-service fora do ar, `POST /products` responde `503` (`Serviço de produtos indisponível`). As consultas `GET` caem no fallback do `ProxyService`, que devolve a última resposta boa guardada em cache (válida por 30 s). Sem cache, `GET /products` e `GET /products/seller/:sellerId` respondem `200` com `[]` (o mesmo formato do contrato), e `GET /products/:id` responde `503`.
 
 ### Health e documentação
 
@@ -299,7 +299,7 @@ curl http://localhost:3005/orders/abc -H "Authorization: Bearer $TOKEN"
 curl http://localhost:3005/orders/00000000-0000-4000-8000-000000000000 -H "Authorization: Bearer $TOKEN"
 ```
 
-Com o checkout-service fora do ar, as seis rotas respondem `503`. Com o products-service fora do ar, `POST /cart/items` também responde `503`.
+Com o checkout-service fora do ar, as seis rotas respondem `503` com `Serviço de checkout indisponível`. Com o products-service fora do ar, `POST /cart/items` responde o `503` do próprio checkout-service (`Serviço de produtos indisponível`), sem retry e sem abrir o circuit breaker do checkout: as demais rotas de carrinho e pedidos continuam funcionando.
 
 ### Teste E2E automatizado
 
