@@ -13,5 +13,6 @@ import { CartItem } from './entities/cart-item.entity';
   ],
   controllers: [CartController],
   providers: [CartService],
+  exports: [CartService], // usado pelo OrdersModule no checkout
 })
 export class CartModule {}

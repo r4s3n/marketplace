@@ -14,6 +14,7 @@ import { RabbitmqService } from '../src/events/rabbitmq/rabbitmq.service';
 import { Order } from '../src/orders/entities/order.entity';
 import { OrderItem } from '../src/orders/entities/order-item.entity';
 import { OrderStatus } from '../src/orders/enums/order-status.enum';
+import { PaymentMethod } from '../src/orders/enums/payment-method.enum';
 import { toPaymentOrderMessage } from '../src/orders/mappers/payment-order-message.mapper';
 
 // soma em centavos para não acumular erro de ponto flutuante
@@ -103,7 +104,7 @@ describe('Mensagem de pagamento a partir das entidades (e2e)', () => {
         userId,
         cartId,
         total: cart.total,
-        paymentMethod: 'credit_card',
+        paymentMethod: PaymentMethod.CREDIT_CARD,
         items: cart.items.map(
           ({ productId, productName, price, quantity, subtotal }) => ({
             productId,
@@ -239,7 +240,7 @@ describe('Mensagem de pagamento a partir das entidades (e2e)', () => {
         userId,
         cartId,
         total: 10,
-        paymentMethod: 'pix',
+        paymentMethod: PaymentMethod.PIX,
         items: [
           {
             productId: randomUUID(),

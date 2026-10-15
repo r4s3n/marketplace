@@ -51,6 +51,7 @@ export class CartItem {
   })
   subtotal: number;
 
-  @CreateDateColumn()
+  // timestamptz: guarda o instante em UTC e o Node lê sem depender do fuso local
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }

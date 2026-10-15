@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { decimalTransformer } from '../../common/transformers/decimal.transformer';
 import { OrderStatus } from '../enums/order-status.enum';
+import { PaymentMethod } from '../enums/payment-method.enum';
 import { OrderItem } from './order-item.entity';
 
 @Entity('orders')
@@ -32,8 +33,9 @@ export class Order {
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
 
-  @Column({ length: 50 }) // ex.: credit_card, o mesmo enviado ao payments-service
-  paymentMethod: string;
+  // varchar explícito: o enum fica só no TypeScript, a coluna não muda
+  @Column({ type: 'varchar', length: 50 }) // o mesmo valor enviado ao payments-service
+  paymentMethod: PaymentMethod;
 
   // cascade: salvar o pedido persiste os itens; eager: itens vêm no find
   @OneToMany(() => OrderItem, (item) => item.order, {
@@ -42,9 +44,10 @@ export class Order {
   })
   items: OrderItem[];
 
-  @CreateDateColumn()
+  // timestamptz: guarda o instante em UTC e o Node lê sem depender do fuso local
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }

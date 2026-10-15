@@ -1,11 +1,9 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
-  ParseUUIDPipe,
   Post,
   Req,
 } from '@nestjs/common';
@@ -16,20 +14,11 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { Request } from 'express';
-import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { uuidPipe } from '../common/pipes/uuid.pipe';
+import type { AuthenticatedRequest } from '../common/types/authenticated-request.type';
 import { CartService } from './cart.service';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { CartResponseDto } from './dto/cart-response.dto';
-
-type AuthenticatedRequest = Request & { user: AuthenticatedUser };
-
-// valida o parâmetro antes do banco: sem isso, um id malformado vira 500 no pg
-const uuidPipe = (param: string) =>
-  new ParseUUIDPipe({
-    exceptionFactory: () =>
-      new BadRequestException(`${param} deve ser um UUID válido`),
-  });
 
 // protegido pelo guard global; o dono do carrinho é sempre req.user.id
 @ApiTags('Cart')

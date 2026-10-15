@@ -22,6 +22,7 @@ async function bootstrap() {
     .addBearerAuth()
     .addTag('Health', 'Health check do serviço')
     .addTag('Cart', 'Carrinho do usuário autenticado')
+    .addTag('Orders', 'Pedidos do usuário autenticado')
     .build();
   SwaggerModule.setup(
     'api',

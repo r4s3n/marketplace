@@ -124,12 +124,56 @@ export class CartService {
     return toCartResponse(await this.carts.findOneByOrFail({ id: cartId }));
   }
 
+  // usado na transação do checkout: o bloqueio faz um segundo checkout simultâneo
+  // esperar e, depois do commit do primeiro, não encontrar mais o carrinho ativo
+  async findActiveCartForCheckout(
+    manager: EntityManager,
+    userId: string,
+  ): Promise<Cart | null> {
+    const cart: Cart | null = await manager.findOne(
+      Cart,
+      lockActiveCart(userId),
+    );
+    if (!cart) {
+      return null;
+    }
+
+    // itens lidos à parte: o FOR UPDATE não aceita o join do eager
+    const items: CartItem[] = await manager.find(CartItem, {
+      where: { cartId: cart.id },
+    });
+    return Object.assign(cart, { items });
+  }
+
+  async completeCart(manager: EntityManager, cartId: string): Promise<void> {
+    await manager.update(Cart, cartId, { status: CartStatus.COMPLETED });
+  }
+
   // ON CONFLICT DO NOTHING no índice parcial: requisições simultâneas
   // não criam dois carrinhos ativos nem falham com 500
   private async getOrCreateActiveCart(
     manager: EntityManager,
     userId: string,
   ): Promise<Cart> {
+    await this.insertActiveCartIfMissing(manager, userId);
+    const cart: Cart | null = await manager.findOne(
+      Cart,
+      lockActiveCart(userId),
+    );
+    if (cart) {
+      return cart;
+    }
+
+    // um checkout concorrente concluiu o carrinho enquanto esperávamos o
+    // bloqueio: a busca não acha mais o carrinho ativo, então criamos outro
+    await this.insertActiveCartIfMissing(manager, userId);
+    return manager.findOneOrFail(Cart, lockActiveCart(userId));
+  }
+
+  private async insertActiveCartIfMissing(
+    manager: EntityManager,
+    userId: string,
+  ): Promise<void> {
     await manager
       .createQueryBuilder()
       .insert()
@@ -138,6 +182,5 @@ export class CartService {
       .orIgnore()
       .updateEntity(false)
       .execute();
-    return manager.findOneOrFail(Cart, lockActiveCart(userId));
   }
 }

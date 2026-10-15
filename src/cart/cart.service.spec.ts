@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { Product } from '../products-client/interfaces/product.interface';
 import { ProductsClientService } from '../products-client/products-client.service';
 import {
@@ -151,7 +151,7 @@ describe('CartService', () => {
   describe('addItem', () => {
     beforeEach(() => {
       productsClient.getProduct.mockResolvedValue(product);
-      manager.findOneOrFail.mockResolvedValue(makeCart());
+      manager.findOne.mockResolvedValue(makeCart());
       repository.findOneByOrFail.mockResolvedValue(makeCart());
     });
 
@@ -193,11 +193,32 @@ describe('CartService', () => {
         total: 0,
       });
       expect(insertChain.orIgnore).toHaveBeenCalled();
+      expect(manager.findOne).toHaveBeenCalledWith(Cart, {
+        where: { userId, status: CartStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
+      });
+      expect(insertChain.execute).toHaveBeenCalledTimes(1);
+      expect(manager.findOneOrFail).not.toHaveBeenCalled();
+    });
+
+    it('carrinho concluído por um checkout concorrente: cria outro carrinho ativo', async () => {
+      const newCart: Cart = { ...makeCart(), id: 'novo-carrinho' };
+      manager.findOne.mockResolvedValueOnce(null);
+      manager.findOneOrFail.mockResolvedValue(newCart);
+      manager.find.mockResolvedValue([]);
+
+      await service.addItem(userId, { productId, quantity: 1 });
+
+      expect(insertChain.execute).toHaveBeenCalledTimes(2);
       expect(manager.findOneOrFail).toHaveBeenCalledWith(Cart, {
         where: { userId, status: CartStatus.ACTIVE },
         lock: { mode: 'pessimistic_write' },
         loadEagerRelations: false,
       });
+      expect(manager.save).toHaveBeenCalledWith(
+        expect.objectContaining({ cartId: 'novo-carrinho', productId }),
+      );
     });
 
     it('produto novo cria o item com snapshot, subtotal e total', async () => {
@@ -378,6 +399,54 @@ describe('CartService', () => {
       await service.removeItem(userId, itemId);
 
       expect(productsClient.getProduct).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findActiveCartForCheckout', () => {
+    it('trava o carrinho ativo e carrega os itens à parte', async () => {
+      const items: CartItem[] = [makeItem({ productId, subtotal: 59.97 })];
+      manager.findOne.mockResolvedValue(makeCart());
+      manager.find.mockResolvedValue(items);
+
+      const result: Cart | null = await service.findActiveCartForCheckout(
+        manager as unknown as EntityManager,
+        userId,
+      );
+
+      expect(manager.findOne).toHaveBeenCalledWith(Cart, {
+        where: { userId, status: CartStatus.ACTIVE },
+        lock: { mode: 'pessimistic_write' },
+        loadEagerRelations: false,
+      });
+      expect(manager.find).toHaveBeenCalledWith(CartItem, {
+        where: { cartId },
+      });
+      expect(result?.id).toBe(cartId);
+      expect(result?.items).toBe(items);
+    });
+
+    it('sem carrinho ativo devolve null sem buscar itens', async () => {
+      manager.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findActiveCartForCheckout(
+          manager as unknown as EntityManager,
+          userId,
+        ),
+      ).resolves.toBeNull();
+      expect(manager.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeCart', () => {
+    it('muda o status do carrinho para completed', async () => {
+      manager.update.mockResolvedValue({ affected: 1 });
+
+      await service.completeCart(manager as unknown as EntityManager, cartId);
+
+      expect(manager.update).toHaveBeenCalledWith(Cart, cartId, {
+        status: CartStatus.COMPLETED,
+      });
     });
   });
 });

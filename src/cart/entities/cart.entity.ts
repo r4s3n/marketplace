@@ -43,9 +43,10 @@ export class Cart {
   })
   items: CartItem[];
 
-  @CreateDateColumn()
+  // timestamptz: guarda o instante em UTC e o Node lê sem depender do fuso local
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt: Date;
 }
