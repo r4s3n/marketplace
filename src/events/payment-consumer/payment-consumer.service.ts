@@ -59,11 +59,11 @@ export class PaymentConsumerService implements OnModuleInit {
       // Espera até que a conexão com o RabbitMQ esteja estabelecida
       const isConencted = await this.rabbitMQService.waitForConnection();
 
+      // sem conexão ainda, a inscrição fica registrada e é ativada na reconexão
       if (!isConencted) {
-        this.logger.error(
-          '❌ Could not connect to RabbitMQ after multiple attempts',
+        this.logger.warn(
+          '⚠️ RabbitMQ not connected yet: consumer will start on reconnect',
         );
-        return;
       }
 
       // Registra callback para processar cada mensagem
