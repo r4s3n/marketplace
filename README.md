@@ -205,6 +205,129 @@ curl http://localhost:3001/health
 
 - Swagger do products-service: http://localhost:3001/api
 
+## Fluxo E2E com checkout-service
+
+O gateway encaminha `/cart/*` e `/orders/*` para o checkout-service (porta 3003) pelo `ProxyService`. As seis rotas exigem JWT, validado pelo próprio gateway, e o header `Authorization` original é repassado ao checkout-service, que usa o token para identificar o dono do carrinho e dos pedidos. Os corpos seguem sem alterações: quem valida é o checkout-service. Seller e buyer usam as rotas da mesma forma.
+
+| Rota no gateway              | Destino no checkout-service  | Sucesso |
+| ---------------------------- | ---------------------------- | ------- |
+| `POST /cart/items`           | `POST /cart/items`           | 201     |
+| `GET /cart`                  | `GET /cart`                  | 200     |
+| `DELETE /cart/items/:itemId` | `DELETE /cart/items/:itemId` | 200     |
+| `POST /cart/checkout`        | `POST /cart/checkout`        | 201     |
+| `GET /orders`                | `GET /orders`                | 200     |
+| `GET /orders/:id`            | `GET /orders/:id`            | 200     |
+
+### Pré-requisitos
+
+1. Postgres do users-service, do products-service e do checkout-service no ar: `docker compose up -d` em `users-service/`, `products-service/` e `checkout-service/`.
+2. RabbitMQ no ar: `docker compose up -d` em `messaging-service/`. Sem ele o checkout ainda responde `201`, mas a mensagem de pagamento não é publicada.
+3. `.env` do gateway com `CHECKOUT_SERVICE_URL=http://localhost:3003` e **o mesmo `JWT_SECRET` do users-service, do products-service e do checkout-service** (ver `.env.example`).
+4. Os quatro serviços rodando: `pnpm start:dev` em `users-service/`, `products-service/`, `checkout-service/` e `api-gateway/`.
+
+### Passo a passo (somente pela porta 3005)
+
+```bash
+# 1. login (registre antes e crie um produto, ver fluxos de users e products) → 200 com { user, token }
+curl -X POST http://localhost:3005/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"joao@example.com","password":"senha123"}'
+
+TOKEN=<token retornado no login>
+PRODUCT_ID=<id de um produto ativo>
+
+# 2. adiciona o produto ao carrinho → 201 com o carrinho (productName e price copiados do produto)
+curl -X POST http://localhost:3005/cart/items \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d "{\"productId\":\"$PRODUCT_ID\",\"quantity\":2}"
+
+ITEM_ID=<id do item retornado em items>
+
+# 3. mostra o carrinho ativo → 200
+curl http://localhost:3005/cart -H "Authorization: Bearer $TOKEN"
+
+# 4. (opcional) remove o item → 200 com o carrinho atualizado
+curl -X DELETE http://localhost:3005/cart/items/$ITEM_ID -H "Authorization: Bearer $TOKEN"
+
+# 5. finaliza o carrinho → 201 com o pedido status "pending"
+curl -X POST http://localhost:3005/cart/checkout \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"paymentMethod":"pix"}'
+
+ORDER_ID=<id do pedido retornado>
+
+# 6. lista os pedidos → 200 com array contendo o pedido
+curl http://localhost:3005/orders -H "Authorization: Bearer $TOKEN"
+
+# 7. mostra o pedido → 200
+curl http://localhost:3005/orders/$ORDER_ID -H "Authorization: Bearer $TOKEN"
+
+# 8. depois do checkout o carrinho volta vazio → 200 com id null e items []
+curl http://localhost:3005/cart -H "Authorization: Bearer $TOKEN"
+```
+
+`paymentMethod` aceita `credit_card`, `debit_card`, `pix` ou `boleto`.
+
+Erros esperados:
+
+```bash
+# sem token ou token adulterado → 401 (o checkout-service não é chamado)
+curl http://localhost:3005/cart
+
+# corpo inválido → 400 com a lista de mensagens do checkout-service
+curl -X POST http://localhost:3005/cart/items \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"productId":"abc","quantity":0}'
+
+# produto inexistente → 404
+curl -X POST http://localhost:3005/cart/items \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"productId":"00000000-0000-4000-8000-000000000000","quantity":1}'
+
+# checkout com carrinho vazio → 400
+curl -X POST http://localhost:3005/cart/checkout \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"paymentMethod":"pix"}'
+
+# id que não é UUID → 400; UUID sem pedido (ou de outro usuário) → 404
+curl http://localhost:3005/orders/abc -H "Authorization: Bearer $TOKEN"
+curl http://localhost:3005/orders/00000000-0000-4000-8000-000000000000 -H "Authorization: Bearer $TOKEN"
+```
+
+Com o checkout-service fora do ar, as seis rotas respondem `503`. Com o products-service fora do ar, `POST /cart/items` também responde `503`.
+
+### Teste E2E automatizado
+
+O fluxo acima (registro de um seller e de um buyer, criação de produto, adição e remoção de item, checkout e consulta dos pedidos) é coberto por `test/checkout-flow.flow-spec.ts`. Ele faz requisições HTTP ao gateway **rodando**, então precisa de todos os pré-requisitos acima no ar:
+
+```bash
+# gateway em http://localhost:3005 (ou informe outro endereço em GATEWAY_URL)
+pnpm run test:e2e:checkout
+```
+
+Cada execução usa e-mails e `User-Agent` próprios, então o teste pode ser repetido sem limpar os bancos e sem esbarrar no rate limit. Ele fica fora do `pnpm run test:e2e`, que continua rodando sem os serviços no ar.
+
+### Health e documentação
+
+```bash
+# dispara o health check de todos os serviços (preenche o cache)
+curl http://localhost:3005/health/ready
+
+# status do checkout-service visto pelo gateway → healthy / unhealthy
+curl http://localhost:3005/health/services/checkout
+
+# health direto no checkout-service
+curl http://localhost:3003/health
+```
+
+- Swagger do gateway (tag `Checkout`): http://localhost:3005/api
+- Swagger do checkout-service: http://localhost:3003/api
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
