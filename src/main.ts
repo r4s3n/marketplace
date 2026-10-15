@@ -11,6 +11,7 @@ async function bootstrap() {
       whitelist: true, // transforma os dados recebidos para o tipo esperado
       forbidNonWhitelisted: true, // remove propriedades que não estão no DTO
       transform: true, // retorna erro se houver propriedades que não estão no DTO
+      stopAtFirstError: true, // uma mensagem por campo: IsInt e Min de quantity têm o mesmo texto
     }),
   );
 

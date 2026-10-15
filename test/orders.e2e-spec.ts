@@ -209,6 +209,7 @@ describe('Pedidos (e2e)', () => {
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        stopAtFirstError: true,
       }),
     );
     await app.init();

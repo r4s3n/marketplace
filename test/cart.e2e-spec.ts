@@ -108,6 +108,7 @@ describe('Carrinho (e2e)', () => {
         whitelist: true,
         forbidNonWhitelisted: true,
         transform: true,
+        stopAtFirstError: true,
       }),
     );
     await app.init();
@@ -376,6 +377,19 @@ describe('Carrinho (e2e)', () => {
           'quantity deve ser um número inteiro maior ou igual a 1',
         );
         expect(getProduct).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([undefined, '2'])(
+      'quantity %p → a mensagem aparece uma única vez',
+      async (quantity) => {
+        const res = await addItem({ productId: randomUUID(), quantity }).expect(
+          400,
+        );
+
+        expect((res.body as { message: string[] }).message).toEqual([
+          'quantity deve ser um número inteiro maior ou igual a 1',
+        ]);
       },
     );
 
