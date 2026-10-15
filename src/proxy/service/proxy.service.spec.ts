@@ -113,11 +113,14 @@ describe('ProxyService', () => {
     });
   });
 
-  describe('erros 4xx do serviço', () => {
+  describe('erros respondidos pelo serviço (4xx e 5xx)', () => {
     it.each([
       [404, { statusCode: 404, message: 'Usuário não encontrado' }],
       [401, { statusCode: 401, message: 'Unauthorized' }],
       [400, { statusCode: 400, message: ['id inválido'] }],
+      [500, { statusCode: 500, message: 'Internal server error' }],
+      // ex.: checkout-service no ar, mas com o products-service fora
+      [503, { statusCode: 503, message: 'Serviço de produtos indisponível' }],
     ])('%i é repassado com o mesmo status e corpo', async (status, body) => {
       httpService.request.mockReturnValue(fail(axiosError(status, body)));
 
@@ -127,21 +130,24 @@ describe('ProxyService', () => {
       expect((error as HttpException).getResponse()).toEqual(body);
     });
 
-    it('não sofre retry', async () => {
-      httpService.request.mockReturnValue(fail(axiosError(404, {})));
+    it.each([404, 503])('%i não sofre retry', async (status) => {
+      httpService.request.mockReturnValue(fail(axiosError(status, {})));
 
       await callProfile().catch(() => undefined);
       expect(httpService.request).toHaveBeenCalledTimes(1);
     });
 
-    it('não conta falha no circuit breaker (não abre o circuito)', async () => {
-      httpService.request.mockReturnValue(fail(axiosError(404, {})));
-      for (let i = 0; i < 5; i++) await callProfile().catch(() => undefined);
+    it.each([404, 500, 503])(
+      '%i não conta falha no circuit breaker (não abre o circuito)',
+      async (status) => {
+        httpService.request.mockReturnValue(fail(axiosError(status, {})));
+        for (let i = 0; i < 5; i++) await callProfile().catch(() => undefined);
 
-      expect(failures()).toBe(0);
-      httpService.request.mockReturnValue(ok({ id: 'user-id' }));
-      await expect(callProfile()).resolves.toEqual({ id: 'user-id' });
-    });
+        expect(failures()).toBe(0);
+        httpService.request.mockReturnValue(ok({ id: 'user-id' }));
+        await expect(callProfile()).resolves.toEqual({ id: 'user-id' });
+      },
+    );
   });
 
   describe('retry', () => {
@@ -150,7 +156,9 @@ describe('ProxyService', () => {
         .mockReturnValueOnce(
           fail(axiosError(undefined, undefined, 'ECONNRESET')),
         )
-        .mockReturnValueOnce(fail(axiosError(503, {})))
+        .mockReturnValueOnce(
+          fail(axiosError(undefined, undefined, 'ECONNREFUSED')),
+        )
         .mockReturnValue(ok({ id: 'user-id' }));
 
       await expect(callProfile()).resolves.toEqual({ id: 'user-id' });
@@ -163,19 +171,42 @@ describe('ProxyService', () => {
         fail(axiosError(undefined, undefined, 'ECONNREFUSED')),
       );
 
-      await expect(callProfile()).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
+      const error = (await callProfile().catch(
+        (e: unknown) => e,
+      )) as HttpException;
+      expect(error).toBeInstanceOf(ServiceUnavailableException);
+      expect(error.getResponse()).toMatchObject({
+        statusCode: 503,
+        message: 'Serviço de usuários indisponível',
+      });
       expect(httpService.request).toHaveBeenCalledTimes(MAX_ATTEMPTS);
     });
 
-    it('5xx do serviço também é retentado e termina em 503', async () => {
-      httpService.request.mockReturnValue(fail(axiosError(500, {})));
+    it.each(['post', 'put', 'patch', 'delete'] as const)(
+      '%s não é repetido (não idempotente): uma tentativa e 503',
+      async (method) => {
+        httpService.request.mockReturnValue(
+          fail(axiosError(undefined, undefined, 'ECONNREFUSED')),
+        );
 
-      await expect(callProfile()).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
+        await expect(
+          service.proxyRequest('checkout', method, '/cart/items', {}),
+        ).rejects.toBeInstanceOf(ServiceUnavailableException);
+        expect(httpService.request).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('a mensagem de indisponibilidade não repete o nome do serviço', async () => {
+      httpService.request.mockReturnValue(
+        fail(axiosError(undefined, undefined, 'ECONNREFUSED')),
       );
-      expect(httpService.request).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+
+      const error = (await service
+        .proxyRequest('checkout', 'get', '/cart')
+        .catch((e: unknown) => e)) as HttpException;
+      expect(error.getResponse()).toMatchObject({
+        message: 'Serviço de checkout indisponível',
+      });
     });
 
     it('a resposta de indisponibilidade não expõe a URL interna', async () => {
@@ -236,6 +267,95 @@ describe('ProxyService', () => {
       expect(circuitBreaker.getCircuitState('proxy-users')?.state).toBe(
         'CLOSED',
       );
+    });
+  });
+
+  describe('cache de GET', () => {
+    it('a chave inclui o usuário: um usuário nunca recebe o cache de outro', async () => {
+      const setCache = jest.spyOn(
+        CacheFallbackService.prototype,
+        'setCacheData',
+      );
+      httpService.request.mockReturnValue(ok({ id: 'cart-id' }));
+
+      await service.proxyRequest(
+        'checkout',
+        'get',
+        '/cart',
+        undefined,
+        headers,
+        user,
+      );
+      await service.proxyRequest('products', 'get', '/products');
+
+      expect(setCache).toHaveBeenCalledWith('checkout:user-id:/cart', {
+        id: 'cart-id',
+      });
+      expect(setCache).toHaveBeenCalledWith('products:public:/products', {
+        id: 'cart-id',
+      });
+    });
+
+    it('não guarda cache de métodos que não são GET', async () => {
+      const setCache = jest.spyOn(
+        CacheFallbackService.prototype,
+        'setCacheData',
+      );
+      httpService.request.mockReturnValue(ok({}));
+
+      await service.proxyRequest('checkout', 'post', '/cart/items', {});
+      expect(setCache).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('fallback de produtos (products-service fora do ar)', () => {
+    const down = () =>
+      httpService.request.mockReturnValue(
+        fail(axiosError(undefined, undefined, 'ECONNREFUSED')),
+      );
+    const getProducts = (path: string) =>
+      service.proxyRequest('products', 'get', path);
+
+    it.each(['/products', '/products/seller/seller-id'])(
+      '%s sem cache → [] (mesmo formato do contrato)',
+      async (path) => {
+        down();
+        await expect(getProducts(path)).resolves.toEqual([]);
+      },
+    );
+
+    it('lista com cache → devolve a última resposta boa', async () => {
+      httpService.request.mockReturnValue(ok([{ id: 'product-id' }]));
+      await getProducts('/products');
+
+      down();
+      await expect(getProducts('/products')).resolves.toEqual([
+        { id: 'product-id' },
+      ]);
+    });
+
+    it('produto único sem cache → 503', async () => {
+      down();
+      await expect(getProducts('/products/product-id')).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('produto único com cache → devolve a última resposta boa', async () => {
+      httpService.request.mockReturnValue(ok({ id: 'product-id' }));
+      await getProducts('/products/product-id');
+
+      down();
+      await expect(getProducts('/products/product-id')).resolves.toEqual({
+        id: 'product-id',
+      });
+    });
+
+    it('POST /products fora do ar → 503 (sem fallback de cache)', async () => {
+      down();
+      await expect(
+        service.proxyRequest('products', 'post', '/products', {}),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 });

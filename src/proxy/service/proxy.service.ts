@@ -18,13 +18,25 @@ interface UserInfo {
 
 type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
-// erro 4xx retornado pelo serviço (ex.: 404, 401): não indica indisponibilidade
-class UpstreamClientError {
+// erro (4xx ou 5xx) respondido pelo serviço: ele está no ar e decidiu responder assim
+// (ex.: 404, ou 503 porque uma dependência dele caiu), então não indica indisponibilidade
+class UpstreamHttpError {
   constructor(
     readonly status: number,
     readonly body: unknown,
   ) {}
 }
+
+// só GET é repetido: refazer POST/PUT/PATCH/DELETE após timeout pode duplicar o efeito
+const GET_MAX_RETRIES = 4;
+
+// mensagens de indisponibilidade devolvidas ao cliente pelo fallback
+const UNAVAILABLE_MESSAGES: Record<keyof typeof serviceConfig, string> = {
+  users: 'Serviço de usuários indisponível',
+  products: 'Serviço de produtos indisponível',
+  checkout: 'Serviço de checkout indisponível',
+  payment: 'Serviço de pagamentos indisponível',
+};
 
 @Injectable()
 export class ProxyService {
@@ -53,7 +65,14 @@ export class ProxyService {
 
     this.logger.log(`Proxying ${method} request to ${serviceName}: ${url}`);
 
-    const fallback = this.createServiceFallback(serviceName, method, path); // nosso fallback
+    const isGet = method.toLowerCase() === 'get';
+    const cacheKey = this.cacheKey(serviceName, path, userInfo?.userId);
+    const fallback = this.createServiceFallback(
+      serviceName,
+      method,
+      path,
+      cacheKey,
+    ); // nosso fallback
 
     // PRIMEIRA CAMADA => CIRCUIT BREAKER
     const result: unknown =
@@ -85,20 +104,19 @@ export class ProxyService {
                       }),
                     );
                   } catch (error) {
-                    // 4xx é resposta de negócio (serviço saudável): devolvemos como resultado
+                    // o serviço respondeu (4xx ou 5xx): devolvemos como resultado
                     // para não acionar retry nem contar falha no circuit breaker
                     if (isAxiosError(error) && error.response) {
                       const { status, data: body } = error.response;
-                      if (status < 500)
-                        return new UpstreamClientError(status, body);
+                      return new UpstreamHttpError(status, body);
                     }
-                    throw error; // rede, timeout e 5xx seguem para retry/circuit breaker
+                    throw error; // só rede e timeout seguem para retry/circuit breaker
                   }
 
-                  // se o nosso response for sucesso, eu guardo no cache
-                  if (method.toLowerCase() === 'get') {
+                  // se o nosso response for sucesso, eu guardo no cache (chave inclui o usuário)
+                  if (isGet) {
                     this.cacheFallbackService.setCacheData(
-                      `${serviceName}-${path}`,
+                      cacheKey,
                       response.data,
                     );
                   }
@@ -109,7 +127,7 @@ export class ProxyService {
                 service.timeout, // tempo de Timeout
               );
             },
-            4, // MAX retries
+            isGet ? GET_MAX_RETRIES : 0, // MAX retries
           );
         },
 
@@ -118,8 +136,8 @@ export class ProxyService {
         { failureThreshold: 3, timeout: 30000, resetTimeout: 30000 }, // config
       );
 
-    // repassa ao cliente o mesmo status e corpo do erro 4xx do serviço
-    if (result instanceof UpstreamClientError) {
+    // repassa ao cliente o mesmo status e corpo do erro respondido pelo serviço
+    if (result instanceof UpstreamHttpError) {
       throw new HttpException(
         result.body as Record<string, unknown>,
         result.status,
@@ -129,48 +147,47 @@ export class ProxyService {
     return result;
   }
 
+  // usuário na chave: respostas de rotas autenticadas (ex.: /cart) nunca são servidas a outro usuário
+  private cacheKey(serviceName: string, path: string, userId?: string) {
+    return `${serviceName}:${userId ?? 'public'}:${path}`;
+  }
+
   private createServiceFallback(
-    serviceName: string,
+    serviceName: keyof typeof serviceConfig,
     method: string,
     path: string,
-  ) {
+    cacheKey: string,
+  ): () => Promise<unknown> {
+    const unavailable = this.defaultFallbackService.createErrorFallback(
+      serviceName,
+      UNAVAILABLE_MESSAGES[serviceName],
+    );
+
     switch (serviceName) {
       case 'users':
         if (path.includes('/auth/login')) {
           return this.defaultFallbackService.createErrorFallback(
             'users',
-            'Authentication service unavailable',
+            'Serviço de autenticação indisponível',
           );
         }
-        return this.defaultFallbackService.createErrorFallback(
-          'users',
-          'User service unavailable',
-        );
+        return unavailable;
 
       case 'products':
-        if (method.toLowerCase() === 'get') {
-          return this.cacheFallbackService.createCacheFallback(
-            `Product-${path}`,
-            { products: [], total: 0, page: 1, limit: 10 },
-          );
+        if (method.toLowerCase() !== 'get') return unavailable;
+
+        // listas caem no último cache bom ou em [], o mesmo formato do contrato
+        if (path === '/products' || path.startsWith('/products/seller/')) {
+          return this.cacheFallbackService.createCacheFallback(cacheKey, []);
         }
 
-        return this.defaultFallbackService.createErrorFallback(
-          'products',
-          'Product service unavailable',
-        );
+        // produto único: último cache bom ou 503 (não há valor padrão que faça sentido)
+        return async () =>
+          (await this.cacheFallbackService.getCachedData(cacheKey, 30000)) ??
+          unavailable();
 
-      case 'checkout':
-      case 'payments':
-        return this.defaultFallbackService.createErrorFallback(
-          serviceName,
-          `${serviceName} service unavailable`,
-        );
       default:
-        return this.defaultFallbackService.createErrorFallback(
-          serviceName,
-          'Service unavailable',
-        );
+        return unavailable;
     }
   }
 }

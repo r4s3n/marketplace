@@ -28,10 +28,8 @@ export class defaultFallbackService {
     // eslint-disable-next-line @typescript-eslint/require-await
     return async (): Promise<never> => {
       this.logger.error(`Fallback error for ${serviceName}: ${errorMessage}`);
-      // 503 para o cliente, em vez de um Error genérico (500)
-      throw new ServiceUnavailableException(
-        `${serviceName} service unavailable: ${errorMessage}`,
-      );
+      // 503 para o cliente, em vez de um Error genérico (500); o nome do serviço fica só no log
+      throw new ServiceUnavailableException(errorMessage);
     };
   }
 
